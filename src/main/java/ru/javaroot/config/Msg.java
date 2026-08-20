@@ -1,0 +1,147 @@
+package ru.javaroot.config;
+
+import org.bukkit.ChatColor;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+
+import java.io.File;
+import java.util.Map;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+public class Msg {
+    private final JavaPlugin plugin;
+    private final OtherMsg other;
+    private FileConfiguration messages;
+
+    public Msg(JavaPlugin plugin, OtherMsg other) {
+        this.plugin = plugin;
+        this.other = other;
+        reload();
+    }
+
+    public void reload() {
+        String resource = "message.yml";
+        File file = new File(plugin.getDataFolder(), resource);
+        if (!file.exists()) {
+            plugin.saveResource(resource, false);
+        }
+        messages = loadFile(file, resource);
+        removeUnused(file);
+        FileConfiguration defaults = loadDefaults(resource);
+        messages.setDefaults(defaults);
+    }
+
+    public void send(Player player, String key) {
+        player.sendMessage(text(key));
+    }
+
+    public void send(Player player, String key, Map<String, ?> values) {
+        player.sendMessage(text(key, values));
+    }
+
+    public void sendCode(Player player, String code) {
+        Component message = LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("link-code-prefix"))
+                .append(Component.text(code, NamedTextColor.AQUA).clickEvent(ClickEvent.copyToClipboard("/code " + code)))
+                .append(LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("link-code-suffix")));
+        player.sendMessage(message);
+    }
+
+    public void sendTelegramReferral(Player player, String botName, String code) {
+        String url = "https://t.me/" + botName + "?start=" + code;
+        Component link = LegacyComponentSerializer.legacyAmpersand()
+                .deserialize(messages.getString("telegram-referral-suffix"))
+                .clickEvent(ClickEvent.openUrl(url));
+        Component message = LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("telegram-referral-prefix"))
+                .append(link);
+        player.sendMessage(message);
+    }
+
+    public String text(String key) {
+        return color(raw(key));
+    }
+
+    public String text(String key, Map<String, ?> values) {
+        return color(raw(key, values));
+    }
+
+    public String raw(String key) {
+        String value = messages.getString(key);
+        if (value == null) {
+            plugin.getLogger().warning(other.raw("message-key-missing", Map.of("key", key)));
+            return "[" + key + "]";
+        }
+        return value;
+    }
+
+    public String raw(String key, Map<String, ?> values) {
+        String value = raw(key);
+        for (Map.Entry<String, ?> entry : values.entrySet()) {
+            value = value.replace("%" + entry.getKey() + "%", String.valueOf(entry.getValue()));
+        }
+        return value;
+    }
+
+    private String color(String value) {
+        return ChatColor.translateAlternateColorCodes('&', value);
+    }
+
+    private FileConfiguration loadDefaults(String resource) {
+        InputStream stream = plugin.getResource(resource);
+        if (stream == null) {
+            throw new IllegalStateException(other.raw("message-resource-missing", Map.of("resource", resource)));
+        }
+        try (Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+            YamlConfiguration defaults = new YamlConfiguration();
+            defaults.load(reader);
+            return defaults;
+        } catch (IOException | InvalidConfigurationException exception) {
+            throw new IllegalStateException(other.raw("message-resource-load-failed", Map.of("resource", resource)), exception);
+        }
+    }
+
+    private YamlConfiguration loadFile(File file, String resource) {
+        YamlConfiguration loaded = new YamlConfiguration();
+        try {
+            loaded.load(file);
+        } catch (IOException | InvalidConfigurationException exception) {
+            plugin.getLogger().warning(other.raw("message-file-invalid", Map.of("resource", resource)));
+        }
+        return loaded;
+    }
+
+    private void removeUnused(File file) {
+        boolean changed = false;
+        for (String key : List.of("prefix", "usage", "placement-expired", "not-chest", "balance",
+                "list-empty", "list-entry", "link-created", "balance-diamond", "balance-deepslate",
+                "config-invalid-price-range", "config-invalid-menu-size", "command-not-registered",
+                "telegram-token-empty-log", "telegram-disabled", "unknown-sound", "telegram-http-error",
+                "telegram-api-error", "telegram-poll-error", "telegram-link-error",
+                "telegram-message-http-error", "telegram-send-error", "discord-http-error",
+                "discord-send-error", "notification-delivery-error", "notification-load-error",
+                "notification-save-error")) {
+            if (messages.contains(key)) {
+                messages.set(key, null);
+                changed = true;
+            }
+        }
+        if (changed) {
+            try {
+                messages.save(file);
+            } catch (IOException exception) {
+                throw new IllegalStateException(other.raw("message-file-update-failed", Map.of("resource", "message.yml")), exception);
+            }
+        }
+    }
+}

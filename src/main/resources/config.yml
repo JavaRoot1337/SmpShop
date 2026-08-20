@@ -1,0 +1,41 @@
+shop:
+  min-price: 1 #минимальная цена магазина
+  max-price: 2304 #максимальная цена магазина
+  max-per-player: 10 #обычный лимит магазинов
+  plus-max-per-player: 50 #увеличенный лимит магазинов
+  menu-size: 36 #размер меню списка магазинов
+  allowed-menu-sizes:
+    - 36 #размер меню на 27 магазинов
+    - 54 #размер меню на 45 магазинов
+  pending-placement-timeout-seconds: 60 #время ожидания установки магазина
+
+storage:
+  sqlite-file: shops.db #имя файла базы данных
+  transaction-timeout-seconds: 10 #таймаут транзакции базы данных
+
+sounds:
+  seller-sale:
+    enabled: true #включить звук продажи
+    sound: entity.player.levelup #звук продажи
+    volume: 1.0 #громкость звука продажи
+    pitch: 0.9 #тон звука продажи
+  buyer-purchase:
+    enabled: true #включить звук покупки
+    sound: block.vault.insert_fail #звук покупки
+    volume: 1.0 #громкость звука покупки
+    pitch: 1.0 #тон звука покупки
+
+notifications:
+  offline-enabled: true #сохранять уведомления для офлайн-продавца
+  join-message-enabled: true #показывать уведомление при входе продавца
+
+integrations:
+  telegram:
+    enabled: false #включить телеграм
+    bot-token: '' #токен телеграм-бота
+    poll-interval-seconds: 2 #интервал опроса телеграма
+    link-code-timeout-seconds: 300 #срок действия кода телеграма
+    referal-bot: true #отправлять реферальную ссылку вместо копирования кода
+    user-bot: '' #имя телеграм-бота без символа @
+  discord:
+    enabled: false #включить дискорд через вебхук
