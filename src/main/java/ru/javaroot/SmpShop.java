@@ -18,6 +18,7 @@ import ru.javaroot.gui.BalanceInv;
 import ru.javaroot.gui.ShopListInv;
 import ru.javaroot.integration.ExternalMsg;
 import ru.javaroot.integration.IntegrationHub;
+import ru.javaroot.item.ItemName;
 import ru.javaroot.list.ShopInteract;
 import ru.javaroot.list.ShopProtect;
 import ru.javaroot.list.ShopTrade;
@@ -44,6 +45,7 @@ public class SmpShop extends JavaPlugin {
     private SoundSvc sounds;
     private NotifySvc notifications;
     private ShopMgr shops;
+    private ItemName itemNames;
     private volatile boolean ready;
 
     @Override
@@ -60,14 +62,15 @@ public class SmpShop extends JavaPlugin {
         notificationStore = new NotificationStore(db);
         webhookStore = new WebhookStore(db);
         shops = new ShopMgr();
+        itemNames = new ItemName();
         sounds = new SoundSvc(getLogger(), cfg, other, sched);
-        notifications = new NotifySvc(getLogger(), cfg, msg, other, notificationStore, sounds, sched);
+        notifications = new NotifySvc(getLogger(), cfg, msg, other, notificationStore, sounds, itemNames, sched);
         integrations = new IntegrationHub(getLogger(), linkStore, webhookStore, cfg, other,
                 new ExternalMsg(this, "message_tg.yml", other),
                 new ExternalMsg(this, "message_ds.yml", other));
         balanceGui = new BalanceInv(this, balanceStore, sched, msg);
         listGui = new ShopListInv(this, shops, cfg, msg, sched);
-        trade = new ShopTrade(shops, shopStore, balanceStore, integrations, notifications, sounds, msg, sched);
+        trade = new ShopTrade(shops, shopStore, balanceStore, integrations, notifications, sounds, msg, itemNames, sched);
 
         ShopCmd shopCmd = new ShopCmd(this, cfg, msg, other, shops, sched, integrations, sounds, balanceGui, listGui);
         PluginCommand command = getCommand("smpshop");

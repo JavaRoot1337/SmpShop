@@ -6,6 +6,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextReplacementConfig;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -50,6 +51,10 @@ public class Msg {
         player.sendMessage(component(key, values));
     }
 
+    public void send(Player player, String key, Map<String, ?> values, Map<String, Component> components) {
+        player.sendMessage(component(key, values, components));
+    }
+
     public void sendCode(Player player, String code) {
         Component message = LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("link-code-prefix"))
                 .append(Component.text(code, NamedTextColor.AQUA).clickEvent(ClickEvent.copyToClipboard("/code " + code)))
@@ -81,6 +86,17 @@ public class Msg {
 
     public Component component(String key, Map<String, ?> values) {
         return LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key, values));
+    }
+
+    public Component component(String key, Map<String, ?> values, Map<String, Component> components) {
+        Component result = LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key, values));
+        for (Map.Entry<String, Component> entry : components.entrySet()) {
+            result = result.replaceText(TextReplacementConfig.builder()
+                    .matchLiteral("%" + entry.getKey() + "%")
+                    .replacement(entry.getValue())
+                    .build());
+        }
+        return result;
     }
 
     public String raw(String key) {

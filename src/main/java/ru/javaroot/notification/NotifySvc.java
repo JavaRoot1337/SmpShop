@@ -9,6 +9,7 @@ import ru.javaroot.config.Msg;
 import ru.javaroot.config.OtherMsg;
 import ru.javaroot.data.NotificationStore;
 import ru.javaroot.integration.SaleLog;
+import ru.javaroot.item.ItemName;
 import ru.javaroot.scheduler.Sched;
 import ru.javaroot.sound.SoundSvc;
 
@@ -24,16 +25,19 @@ public class NotifySvc implements Listener {
     private final OtherMsg other;
     private final NotificationStore store;
     private final SoundSvc sounds;
+    private final ItemName itemNames;
     private final Sched sched;
     private volatile boolean ready;
 
-    public NotifySvc(Logger logger, Cfg cfg, Msg msg, OtherMsg other, NotificationStore store, SoundSvc sounds, Sched sched) {
+    public NotifySvc(Logger logger, Cfg cfg, Msg msg, OtherMsg other, NotificationStore store, SoundSvc sounds,
+                     ItemName itemNames, Sched sched) {
         this.logger = logger;
         this.cfg = cfg;
         this.msg = msg;
         this.other = other;
         this.store = store;
         this.sounds = sounds;
+        this.itemNames = itemNames;
         this.sched = sched;
     }
 
@@ -45,9 +49,9 @@ public class NotifySvc implements Listener {
         sched.entity(seller, () -> {
             msg.send(seller, "sale-chat", Map.of(
                     "shop", sale.shopName(),
-                    "item", sale.item(),
                     "items", sale.items(),
-                    "amount", sale.amount()));
+                    "amount", sale.amount()),
+                    Map.of("item", itemNames.component(sale.material())));
             sounds.sellerSale(seller);
         }, () -> saveOffline(sale.sellerId(), sale.amount()));
     }
