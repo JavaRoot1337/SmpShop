@@ -117,6 +117,13 @@ public class SmpShop extends JavaPlugin {
         if (notifications != null) {
             notifications.stop();
         }
+        if (balanceGui != null) {
+            try {
+                balanceGui.closeAll().join();
+            } catch (java.util.concurrent.CompletionException exception) {
+                getLogger().log(Level.SEVERE, "Не удалось сохранить balance-сессии", exception.getCause());
+            }
+        }
         if (trade != null) {
             trade.closeAll();
         }

@@ -10,6 +10,7 @@ import net.kyori.adventure.text.TextReplacementConfig;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import ru.javaroot.item.ItemIcon;
 
 import java.io.File;
 import java.util.Map;
@@ -23,6 +24,7 @@ import java.util.List;
 public class Msg {
     private final JavaPlugin plugin;
     private final OtherMsg other;
+    private final ItemIcon itemIcon = new ItemIcon();
     private FileConfiguration messages;
 
     public Msg(JavaPlugin plugin, OtherMsg other) {
@@ -56,18 +58,18 @@ public class Msg {
     }
 
     public void sendCode(Player player, String code) {
-        Component message = LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("link-code-prefix"))
+        Component message = itemIcon.replace(LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("link-code-prefix")))
                 .append(Component.text(code, NamedTextColor.AQUA).clickEvent(ClickEvent.copyToClipboard("/code " + code)))
-                .append(LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("link-code-suffix")));
+                .append(itemIcon.replace(LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("link-code-suffix"))));
         player.sendMessage(message);
     }
 
     public void sendTelegramReferral(Player player, String botName, String code) {
         String url = "https://t.me/" + botName + "?start=" + code;
-        Component link = LegacyComponentSerializer.legacyAmpersand()
-                .deserialize(messages.getString("telegram-referral-suffix"))
+        Component link = itemIcon.replace(LegacyComponentSerializer.legacyAmpersand()
+                .deserialize(messages.getString("telegram-referral-suffix")))
                 .clickEvent(ClickEvent.openUrl(url));
-        Component message = LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("telegram-referral-prefix"))
+        Component message = itemIcon.replace(LegacyComponentSerializer.legacyAmpersand().deserialize(messages.getString("telegram-referral-prefix")))
                 .append(link);
         player.sendMessage(message);
     }
@@ -81,22 +83,22 @@ public class Msg {
     }
 
     public Component component(String key) {
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key));
+        return itemIcon.replace(LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key)));
     }
 
     public Component component(String key, Map<String, ?> values) {
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key, values));
+        return itemIcon.replace(LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key, values)));
     }
 
     public Component component(String key, Map<String, ?> values, Map<String, Component> components) {
-        Component result = LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key, values));
+        Component result = itemIcon.replace(LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key, values)));
         for (Map.Entry<String, Component> entry : components.entrySet()) {
             result = result.replaceText(TextReplacementConfig.builder()
                     .matchLiteral("%" + entry.getKey() + "%")
                     .replacement(entry.getValue())
                     .build());
         }
-        return result;
+        return itemIcon.replace(result);
     }
 
     public String raw(String key) {
@@ -144,6 +146,7 @@ public class Msg {
         boolean changed = false;
         for (String key : List.of("prefix", "usage", "placement-expired", "not-chest", "balance",
                 "list-empty", "list-entry", "link-created", "balance-diamond", "balance-deepslate",
+                "balance-close",
                 "config-invalid-price-range", "config-invalid-menu-size", "command-not-registered",
                 "telegram-token-empty-log", "telegram-disabled", "unknown-sound", "telegram-http-error",
                 "telegram-api-error", "telegram-poll-error", "telegram-link-error",

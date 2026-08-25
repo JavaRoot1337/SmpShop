@@ -18,6 +18,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextDecoration;
 import ru.javaroot.config.Cfg;
 import ru.javaroot.config.Msg;
 import ru.javaroot.currency.Currency;
@@ -149,13 +150,13 @@ public class ShopListInv implements Listener {
         Material material = mostCommon(location);
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
-        meta.displayName(msg.component("list-shop-name", Map.of("id", shop.id())));
+        meta.displayName(itemText(msg.component("list-shop-name", Map.of("id", shop.id()))));
         meta.lore(List.of(
-                msg.component("list-owner", Map.of("owner", shop.ownerName())),
-                msg.component("list-coordinates", Map.of("x", shop.x1(), "y", shop.y1(), "z", shop.z1())),
-                msg.component("list-earned", Map.of("earned", shop.earnedTotal())),
-                msg.component("list-sold", Map.of("sold", shop.soldItems())),
-                msg.component("list-price", Map.of("price", shop.price()))
+                itemText(msg.component("list-owner", Map.of("owner", shop.ownerName()))),
+                itemText(msg.component("list-coordinates", Map.of("x", shop.x1(), "y", shop.y1(), "z", shop.z1()))),
+                itemText(msg.component("list-earned", Map.of("earned", shop.earnedTotal()))),
+                itemText(msg.component("list-sold", Map.of("sold", shop.soldItems()))),
+                itemText(msg.component("list-price", Map.of("price", shop.price())))
         ));
         meta.getPersistentDataContainer().set(guiKey, PersistentDataType.STRING, "list");
         meta.getPersistentDataContainer().set(shopKey, PersistentDataType.LONG, shop.id());
@@ -199,12 +200,16 @@ public class ShopListInv implements Listener {
     private ItemStack navigation(String direction, int page, Component name) {
         ItemStack item = new ItemStack("next".equals(direction) ? Material.ARROW : Material.SPECTRAL_ARROW);
         ItemMeta meta = item.getItemMeta();
-        meta.displayName(name);
+        meta.displayName(itemText(name));
         meta.getPersistentDataContainer().set(guiKey, PersistentDataType.STRING, "list");
         meta.getPersistentDataContainer().set(navKey, PersistentDataType.STRING, direction);
         meta.getPersistentDataContainer().set(pageKey, PersistentDataType.INTEGER, page);
         item.setItemMeta(meta);
         return item;
+    }
+
+    private Component itemText(Component component) {
+        return component.decoration(TextDecoration.ITALIC, false);
     }
 
     private void openShop(Player player, Shop shop) {
