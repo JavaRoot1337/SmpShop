@@ -70,9 +70,9 @@ public class SmpShop extends JavaPlugin {
                 new ExternalMsg(this, "message_ds.yml", other));
         balanceGui = new BalanceInv(this, balanceStore, sched, msg);
         listGui = new ShopListInv(this, shops, cfg, msg, sched);
-        trade = new ShopTrade(shops, shopStore, balanceStore, integrations, notifications, sounds, msg, itemNames, sched);
+        trade = new ShopTrade(shops, shopStore, balanceStore, integrations, notifications, sounds, msg, itemNames, sched, getLogger());
 
-        ShopCmd shopCmd = new ShopCmd(this, cfg, msg, other, shops, sched, integrations, sounds, balanceGui, listGui);
+        ShopCmd shopCmd = new ShopCmd(this, cfg, msg, shops, sched, integrations, sounds, balanceGui, listGui);
         PluginCommand command = getCommand("smpshop");
         if (command == null) {
             throw new IllegalStateException(other.raw("command-not-registered"));
@@ -98,7 +98,11 @@ public class SmpShop extends JavaPlugin {
                 })
                 .whenComplete((ignored, error) -> {
                     if (error != null) {
+                        ready = false;
                         getLogger().log(Level.SEVERE, "Не удалось загрузить SQLite", error);
+                        notifications.stop();
+                        integrations.stop();
+                        db.close();
                         return;
                     }
                     notifications.start();

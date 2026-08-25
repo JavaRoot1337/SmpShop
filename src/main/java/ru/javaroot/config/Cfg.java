@@ -3,6 +3,8 @@ package ru.javaroot.config;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.List;
 
 public class Cfg {
@@ -14,15 +16,23 @@ public class Cfg {
         this.plugin = plugin;
         this.other = other;
         this.cfg = plugin.getConfig();
+        validate();
         migrate();
         validate();
     }
 
     public void reload() {
+        FileConfiguration previous = cfg;
         plugin.reloadConfig();
         cfg = plugin.getConfig();
-        migrate();
-        validate();
+        try {
+            validate();
+            migrate();
+            validate();
+        } catch (RuntimeException exception) {
+            cfg = previous;
+            throw exception;
+        }
     }
 
     public int minPrice() {
@@ -130,10 +140,42 @@ public class Cfg {
         if (minPrice() < 1 || maxPrice() < minPrice()) {
             throw new IllegalStateException(other.raw("config-invalid-price-range"));
         }
+        if (regularShopLimit() < 1 || plusShopLimit() < regularShopLimit()
+                || placementTimeoutSeconds() < 1 || transactionTimeoutSeconds() < 1
+                || telegramPollIntervalSeconds() < 1 || telegramCodeTimeoutSeconds() < 1
+                || !validVolume(sellerSaleVolume()) || !validVolume(buyerPurchaseVolume())
+                || !validPitch(sellerSalePitch()) || !validPitch(buyerPurchasePitch())) {
+            throw new IllegalStateException(other.raw("config-invalid-value"));
+        }
+        validateSqlitePath();
         List<Integer> sizes = cfg.getIntegerList("shop.allowed-menu-sizes");
         int menuSize = cfg.getInt("shop.menu-size");
         if (!sizes.contains(menuSize) || menuSize % 9 != 0 || menuSize < 9 || menuSize > 54) {
             throw new IllegalStateException(other.raw("config-invalid-menu-size"));
+        }
+    }
+
+    private boolean validVolume(float value) {
+        return Float.isFinite(value) && value >= 0;
+    }
+
+    private boolean validPitch(float value) {
+        return Float.isFinite(value) && value > 0 && value <= 2;
+    }
+
+    private void validateSqlitePath() {
+        String fileName = sqliteFile();
+        if (fileName == null || fileName.isBlank()) {
+            throw new IllegalStateException(other.raw("config-invalid-value"));
+        }
+        try {
+            File root = plugin.getDataFolder().getCanonicalFile();
+            File file = new File(root, fileName).getCanonicalFile();
+            if (file.equals(root) || !file.toPath().startsWith(root.toPath())) {
+                throw new IllegalStateException(other.raw("config-invalid-value"));
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException(other.raw("config-invalid-value"), exception);
         }
     }
 

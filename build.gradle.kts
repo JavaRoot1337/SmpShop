@@ -5,6 +5,7 @@ plugins {
 
 group = "ru.javaroot"
 version = "1.0"
+val pluginVersion = version
 
 val defaultSqliteNativePath = when {
     System.getProperty("os.name").startsWith("Windows") -> "Windows/x86_64"
@@ -47,7 +48,7 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.processResources {
     filteringCharset = "UTF-8"
     filesMatching("plugin.yml") {
-        expand("version" to project.version)
+        expand("version" to pluginVersion)
     }
 }
 

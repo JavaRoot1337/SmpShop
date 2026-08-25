@@ -42,11 +42,15 @@ public class NotifySvc implements Listener {
     }
 
     public void sale(SaleLog sale, Player seller) {
-        if (seller == null || !seller.isOnline()) {
+        if (seller == null) {
             saveOffline(sale.sellerId(), sale.amount());
             return;
         }
         sched.entity(seller, () -> {
+            if (!seller.isOnline()) {
+                saveOffline(sale.sellerId(), sale.amount());
+                return;
+            }
             msg.send(seller, "sale-chat", Map.of(
                     "shop", sale.shopName(),
                     "items", sale.items(),

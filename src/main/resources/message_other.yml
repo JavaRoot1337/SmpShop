@@ -1,5 +1,6 @@
 config-invalid-price-range: 'Неверный диапазон цены в конфиге'
 config-invalid-menu-size: 'Неверный размер меню в конфиге'
+config-invalid-value: 'Неверное значение в конфиге'
 command-not-registered: 'Команда smpshop не зарегистрирована'
 message-key-missing: 'Не найдено сообщение: %key%'
 message-resource-missing: 'Не найден встроенный файл сообщений: %resource%'

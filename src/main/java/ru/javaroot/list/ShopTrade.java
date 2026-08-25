@@ -39,6 +39,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ShopTrade implements Listener {
     private final ShopMgr shops;
@@ -50,11 +52,14 @@ public class ShopTrade implements Listener {
     private final Msg msg;
     private final ItemName itemNames;
     private final Sched sched;
+    private final Logger logger;
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
+    private final Map<UUID, EnumMap<Currency, Long>> pendingReturns = new ConcurrentHashMap<>();
     private final Set<Long> lockedShops = ConcurrentHashMap.newKeySet();
 
     public ShopTrade(ShopMgr shops, ShopStore shopStore, BalanceStore balances, IntegrationHub integrations,
-                     NotifySvc notifications, SoundSvc sounds, Msg msg, ItemName itemNames, Sched sched) {
+                     NotifySvc notifications, SoundSvc sounds, Msg msg, ItemName itemNames, Sched sched,
+                     Logger logger) {
         this.shops = shops;
         this.shopStore = shopStore;
         this.balances = balances;
@@ -64,6 +69,7 @@ public class ShopTrade implements Listener {
         this.msg = msg;
         this.itemNames = itemNames;
         this.sched = sched;
+        this.logger = logger;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -83,6 +89,12 @@ public class ShopTrade implements Listener {
             return;
         }
         if (lockedShops.contains(shop.id()) || sessions.containsKey(player.getUniqueId())) {
+            event.setCancelled(true);
+            msg.send(player, "shop-busy");
+            return;
+        }
+        if (event.getInventory().getViewers().stream()
+                .anyMatch(viewer -> viewer.getUniqueId().equals(shop.ownerId()))) {
             event.setCancelled(true);
             msg.send(player, "shop-busy");
             return;
@@ -178,7 +190,10 @@ public class ShopTrade implements Listener {
 
     public void closeAll() {
         for (UUID playerId : Set.copyOf(sessions.keySet())) {
-            close(playerId, Bukkit.getPlayer(playerId));
+            close(playerId, Bukkit.getPlayer(playerId), true);
+        }
+        for (UUID playerId : Set.copyOf(pendingReturns.keySet())) {
+            depositPendingReturn(playerId);
         }
     }
 
@@ -205,23 +220,26 @@ public class ShopTrade implements Listener {
 
     private void completePurchase(Player player, Session session, Shop shop, ItemStack product) {
         EnumMap<Currency, Long> payment = takePayment(session, shop.price());
-        EnumMap<Currency, Long> excess = takeRemainingPayment(session);
-        givePayment(player, excess);
+        int itemSlot = session.pendingSlot;
         session.clearPendingProduct();
         int items = product.getAmount();
         long amount = shop.price();
-        shops.recordSale(shop.id(), amount, items);
-        shopStore.recordSale(shop.id(), amount, items);
-        for (Map.Entry<Currency, Long> entry : payment.entrySet()) {
-            balances.deposit(shop.ownerId(), entry.getKey(), entry.getValue());
-        }
         SaleLog sale = new SaleLog(shop.ownerId(), shop.id(), "#" + shop.id(), product.getType(), items, amount);
-        integrations.sale(sale);
-        sounds.buyerPurchase(player);
-        msg.send(player, "purchase-success", Map.of("items", items, "amount", amount),
-                Map.of("item", itemNames.component(product.getType())));
-        Player seller = Bukkit.getPlayer(shop.ownerId());
-        notifications.sale(sale, seller);
+        shopStore.settleSale(UUID.randomUUID().toString(), shop, player.getUniqueId(), itemSlot, items, amount, payment)
+                .thenRun(() -> {
+                    shops.recordSale(shop.id(), amount, items);
+                    integrations.sale(sale);
+                    sched.entity(player, () -> {
+                        sounds.buyerPurchase(player);
+                        msg.send(player, "purchase-success", Map.of("items", items, "amount", amount),
+                                Map.of("item", itemNames.component(product.getType())));
+                        notifications.sale(sale, Bukkit.getPlayer(shop.ownerId()));
+                    });
+                })
+                .exceptionally(error -> {
+                    logger.log(Level.SEVERE, "Не удалось завершить продажу #" + shop.id(), error);
+                    return null;
+                });
     }
 
     private boolean isProductPickup(InventoryClickEvent event, Session session) {
@@ -495,22 +513,6 @@ public class ShopTrade implements Listener {
         return result;
     }
 
-    private EnumMap<Currency, Long> takeRemainingPayment(Session session) {
-        EnumMap<Currency, Long> result = new EnumMap<>(Currency.class);
-        for (int slot : session.paymentSlots) {
-            ItemStack item = session.inventory.getItem(slot);
-            if (isEmpty(item)) {
-                continue;
-            }
-            Currency currency = Currency.from(item.getType());
-            if (currency != null) {
-                result.merge(currency, (long) item.getAmount(), Long::sum);
-                session.inventory.setItem(slot, null);
-            }
-        }
-        return result;
-    }
-
     private void givePayment(Player player, Map<Currency, Long> payment) {
         for (Map.Entry<Currency, Long> entry : payment.entrySet()) {
             long left = entry.getValue();
@@ -544,6 +546,10 @@ public class ShopTrade implements Listener {
     }
 
     private void close(UUID playerId, Player player) {
+        close(playerId, player, false);
+    }
+
+    private void close(UUID playerId, Player player, boolean persistPayment) {
         Session session = sessions.remove(playerId);
         if (session == null) {
             return;
@@ -568,13 +574,31 @@ public class ShopTrade implements Listener {
                 session.inventory.setItem(slot, null);
             }
         }
-        if (player == null || !player.isOnline()) {
+        if (persistPayment || player == null || !player.isOnline()) {
             returned.forEach((currency, amount) -> balances.deposit(playerId, currency, amount));
             return;
         }
-        sched.entity(player, () -> {
-            givePayment(player, returned);
+        pendingReturns.merge(playerId, returned, (current, added) -> {
+            added.forEach((currency, amount) -> current.merge(currency, amount, Long::sum));
+            return current;
         });
+        sched.entity(player, () -> {
+            EnumMap<Currency, Long> payment = pendingReturns.remove(playerId);
+            if (payment != null) {
+                if (player.isOnline()) {
+                    givePayment(player, payment);
+                } else {
+                    payment.forEach((currency, amount) -> balances.deposit(playerId, currency, amount));
+                }
+            }
+        }, () -> depositPendingReturn(playerId));
+    }
+
+    private void depositPendingReturn(UUID playerId) {
+        EnumMap<Currency, Long> payment = pendingReturns.remove(playerId);
+        if (payment != null) {
+            payment.forEach((currency, amount) -> balances.deposit(playerId, currency, amount));
+        }
     }
 
     private Shop findShop(Inventory inventory) {

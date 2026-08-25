@@ -10,6 +10,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.DoubleChestInventory;
 import org.bukkit.inventory.InventoryHolder;
 import ru.javaroot.SmpShop;
@@ -70,6 +71,11 @@ public class ShopInteract implements Listener {
         delete(player, shop);
     }
 
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        command.clearAction(event.getPlayer().getUniqueId());
+    }
+
     private void place(Player player, Location location, ShopCmd.Action action) {
         List<Location> locations = chestLocations(location);
         List<ShopKey> keys = locations.stream().map(ShopKey::of).toList();
@@ -86,7 +92,9 @@ public class ShopInteract implements Listener {
                 locations.size() == 2 ? locations.get(1).getBlockZ() : null,
                 action.price(), 0, 0, 0, System.currentTimeMillis(), true);
         store.insert(draft).thenAccept(id -> sched.region(first, () -> {
-            if (shops.find(ShopKey.of(first)) != null) {
+            boolean invalid = locations.stream().anyMatch(loc -> loc.getBlock().getType() != Material.CHEST);
+            boolean conflict = keys.stream().anyMatch(key -> shops.find(key) != null);
+            if (invalid || conflict) {
                 shops.release(keys);
                 store.delete(id);
                 sched.entity(player, () -> msg.send(player, "shop-conflict"));

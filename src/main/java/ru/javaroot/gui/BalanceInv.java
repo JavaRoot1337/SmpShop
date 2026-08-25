@@ -34,7 +34,7 @@ public class BalanceInv implements Listener {
     private final Msg msg;
     private final NamespacedKey itemKey;
     private final NamespacedKey typeKey;
-    private final Set<UUID> opened = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Inventory> opened = new ConcurrentHashMap<>();
     private final Set<UUID> withdrawing = ConcurrentHashMap.newKeySet();
 
     public BalanceInv(JavaPlugin plugin, BalanceStore balances, Sched sched, Msg msg) {
@@ -50,17 +50,21 @@ public class BalanceInv implements Listener {
             if (!player.isOnline()) {
                 return;
             }
-            opened.add(player.getUniqueId());
-            player.openInventory(create(balance));
+            Inventory menu = create(balance);
+            opened.put(player.getUniqueId(), menu);
+            player.openInventory(menu);
         }));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onClick(InventoryClickEvent event) {
-        if (!(event.getWhoClicked() instanceof Player player) || !opened.contains(player.getUniqueId())) {
+        if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
         Inventory menu = event.getView().getTopInventory();
+        if (opened.get(player.getUniqueId()) != menu) {
+            return;
+        }
         if (event.getRawSlot() >= menu.getSize()) {
             if (event.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY
                     || event.getAction() == InventoryAction.COLLECT_TO_CURSOR
@@ -105,7 +109,8 @@ public class BalanceInv implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDrag(InventoryDragEvent event) {
-        if (event.getWhoClicked() instanceof Player player && opened.contains(player.getUniqueId())
+        if (event.getWhoClicked() instanceof Player player
+                && opened.get(player.getUniqueId()) == event.getView().getTopInventory()
                 && event.getRawSlots().stream().anyMatch(slot -> slot < event.getView().getTopInventory().getSize())) {
             event.setCancelled(true);
         }
@@ -114,7 +119,7 @@ public class BalanceInv implements Listener {
     @EventHandler
     public void onClose(InventoryCloseEvent event) {
         if (event.getPlayer() instanceof Player player) {
-            opened.remove(player.getUniqueId());
+            opened.remove(player.getUniqueId(), event.getView().getTopInventory());
         }
     }
 
@@ -189,6 +194,6 @@ public class BalanceInv implements Listener {
     }
 
     private boolean isOpen(Player player, Inventory menu) {
-        return opened.contains(player.getUniqueId()) && player.getOpenInventory().getTopInventory() == menu;
+        return opened.get(player.getUniqueId()) == menu && player.getOpenInventory().getTopInventory() == menu;
     }
 }

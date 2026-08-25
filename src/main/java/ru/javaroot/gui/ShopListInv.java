@@ -42,7 +42,7 @@ public class ShopListInv implements Listener {
     private final NamespacedKey shopKey;
     private final NamespacedKey pageKey;
     private final NamespacedKey navKey;
-    private final java.util.Set<UUID> opened = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Inventory> opened = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> owners = new ConcurrentHashMap<>();
 
     public ShopListInv(JavaPlugin plugin, ShopMgr shops, Cfg cfg, Msg msg, Sched sched) {
@@ -77,15 +77,17 @@ public class ShopListInv implements Listener {
                 return;
             }
             List<ItemStack> items = icons.stream().map(CompletableFuture::join).toList();
-            player.openInventory(create(current, pages, pageShops, items));
-            opened.add(player.getUniqueId());
+            Inventory menu = create(current, pages, pageShops, items);
+            opened.put(player.getUniqueId(), menu);
+            player.openInventory(menu);
             owners.put(player.getUniqueId(), ownerId);
         }));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onClick(InventoryClickEvent event) {
-        if (!(event.getWhoClicked() instanceof Player player) || !opened.contains(player.getUniqueId())) {
+        if (!(event.getWhoClicked() instanceof Player player)
+                || opened.get(player.getUniqueId()) != event.getView().getTopInventory()) {
             return;
         }
         event.setCancelled(true);
@@ -125,8 +127,9 @@ public class ShopListInv implements Listener {
     @EventHandler
     public void onClose(InventoryCloseEvent event) {
         if (event.getPlayer() instanceof Player player) {
-            opened.remove(player.getUniqueId());
-            owners.remove(player.getUniqueId());
+            if (opened.remove(player.getUniqueId(), event.getView().getTopInventory())) {
+                owners.remove(player.getUniqueId());
+            }
         }
     }
 

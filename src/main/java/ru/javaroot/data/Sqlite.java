@@ -14,6 +14,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public class Sqlite {
@@ -25,8 +27,11 @@ public class Sqlite {
         thread.setDaemon(true);
         return thread;
     });
+    private final Object lifecycle = new Object();
     private Connection connection;
     private Driver driver;
+    private CompletableFuture<Void> startFuture;
+    private volatile State state = State.NEW;
 
     public Sqlite(Plugin plugin, String fileName, int timeoutSeconds) {
         this.plugin = plugin;
@@ -35,37 +40,55 @@ public class Sqlite {
     }
 
     public CompletableFuture<Void> start() {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                File file = new File(plugin.getDataFolder(), fileName);
-                File parent = file.getParentFile();
-                if (!parent.exists() && !parent.mkdirs()) {
-                    throw new SQLException("Cannot create plugin data folder");
-                }
-                driver = new JDBC();
-                DriverManager.registerDriver(driver);
-                connection = DriverManager.getConnection("jdbc:sqlite:" + file.getPath());
-                connection.setAutoCommit(true);
-                configure(connection);
-                new Migration().apply(connection);
-            } catch (SQLException exception) {
-                closeResources();
-                throw new CompletionException(new IllegalStateException("SQLite initialization failed", exception));
+        synchronized (lifecycle) {
+            if (state != State.NEW) {
+                return CompletableFuture.failedFuture(new IllegalStateException("SQLite has already started"));
             }
-        });
+            state = State.STARTING;
+            startFuture = CompletableFuture.runAsync(this::initialize, queue);
+            return startFuture;
+        }
+    }
+
+    private void initialize() {
+        try {
+            File file = new File(plugin.getDataFolder(), fileName);
+            File parent = file.getParentFile();
+            if (!parent.exists() && !parent.mkdirs()) {
+                throw new SQLException("Cannot create plugin data folder");
+            }
+            driver = new JDBC();
+            DriverManager.registerDriver(driver);
+            connection = DriverManager.getConnection("jdbc:sqlite:" + file.getPath());
+            connection.setAutoCommit(true);
+            configure(connection);
+            new Migration().apply(connection);
+            state = State.READY;
+        } catch (SQLException exception) {
+            closeResources();
+            state = State.FAILED;
+            throw new CompletionException(new IllegalStateException("SQLite initialization failed", exception));
+        }
     }
 
     public <T> CompletableFuture<T> submit(SqlWork<T> work) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                if (connection == null || connection.isClosed()) {
-                    throw new IllegalStateException("SQLite is not ready");
+        if (state != State.READY) {
+            return CompletableFuture.failedFuture(new IllegalStateException("SQLite is not ready"));
+        }
+        try {
+            return CompletableFuture.supplyAsync(() -> {
+                try {
+                    if (connection == null || connection.isClosed()) {
+                        throw new IllegalStateException("SQLite is not ready");
+                    }
+                    return work.run(connection);
+                } catch (SQLException exception) {
+                    throw new IllegalStateException("SQLite operation failed", exception);
                 }
-                return work.run(connection);
-            } catch (SQLException exception) {
-                throw new IllegalStateException("SQLite operation failed", exception);
-            }
-        }, queue);
+            }, queue);
+        } catch (RejectedExecutionException exception) {
+            return CompletableFuture.failedFuture(new IllegalStateException("SQLite is closing", exception));
+        }
     }
 
     private void configure(Connection connection) throws SQLException {
@@ -78,26 +101,42 @@ public class Sqlite {
     }
 
     public void close() {
-        if (!queue.isShutdown()) {
-            queue.submit(() -> {
-                if (connection != null) {
-                    try {
-                        connection.close();
-                    } catch (SQLException exception) {
-                        plugin.getLogger().warning("Не удалось закрыть SQLite: " + exception.getMessage());
-                    }
-                }
-            });
-            queue.shutdown();
+        CompletableFuture<Void> startup;
+        synchronized (lifecycle) {
+            if (state == State.CLOSING || state == State.CLOSED) {
+                return;
+            }
+            state = State.CLOSING;
+            startup = startFuture;
+        }
+        if (startup != null && !startup.isDone()) {
             try {
-                if (!queue.awaitTermination(10, TimeUnit.SECONDS)) {
-                    queue.shutdownNow();
-                }
+                startup.get(10, TimeUnit.SECONDS);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 queue.shutdownNow();
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException exception) {
+                queue.shutdownNow();
             }
+        }
+        if (!queue.isShutdown()) {
+            try {
+                Future<?> closeTask = queue.submit(this::closeResources);
+                queue.shutdown();
+                closeTask.get(10, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                queue.shutdownNow();
+                closeResources();
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException exception) {
+                queue.shutdownNow();
+                closeResources();
+            }
+        } else {
             closeResources();
+        }
+        synchronized (lifecycle) {
+            state = State.CLOSED;
         }
     }
 
@@ -127,5 +166,14 @@ public class Sqlite {
     @FunctionalInterface
     public interface SqlWork<T> {
         T run(Connection connection) throws SQLException;
+    }
+
+    private enum State {
+        NEW,
+        STARTING,
+        READY,
+        FAILED,
+        CLOSING,
+        CLOSED
     }
 }
