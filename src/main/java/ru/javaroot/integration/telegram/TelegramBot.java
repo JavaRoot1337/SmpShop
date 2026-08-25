@@ -27,7 +27,6 @@ public class TelegramBot {
     private final ExternalMsg messages;
     private final OtherMsg other;
     private final HttpClient http;
-    private final String token;
     private final int pollSeconds;
     private final String api;
     private final AtomicBoolean polling = new AtomicBoolean();
@@ -40,7 +39,6 @@ public class TelegramBot {
         this.links = links;
         this.messages = messages;
         this.other = other;
-        this.token = token;
         this.pollSeconds = Math.max(1, pollSeconds);
         this.api = "https://api.telegram.org/bot" + token;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();

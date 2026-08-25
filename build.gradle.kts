@@ -6,6 +6,15 @@ plugins {
 group = "ru.javaroot"
 version = "1.0"
 
+val defaultSqliteNativePath = when {
+    System.getProperty("os.name").startsWith("Windows") -> "Windows/x86_64"
+    System.getProperty("os.name").startsWith("Mac") -> "Mac/x86_64"
+    else -> "Linux/x86_64"
+}
+val sqliteNativePath = providers.gradleProperty("sqliteNativePath")
+    .orElse(defaultSqliteNativePath)
+    .get()
+
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
@@ -51,6 +60,11 @@ tasks.shadowJar {
     archiveClassifier.set("")
     mergeServiceFiles()
     relocate("com.google.gson", "ru.javaroot.libs.gson")
+    exclude { entry ->
+        val path = entry.path
+        path.startsWith("org/sqlite/native/") &&
+            !path.startsWith("org/sqlite/native/$sqliteNativePath/")
+    }
 }
 
 tasks.build {

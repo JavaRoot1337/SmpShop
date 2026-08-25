@@ -119,12 +119,12 @@ public class BalanceInv implements Listener {
     }
 
     private Inventory create(Balance balance) {
-        Inventory inventory = Bukkit.createInventory(null, 27, msg.text("balance-title"));
+        Inventory inventory = Bukkit.createInventory(null, 27, msg.component("balance-title"));
         setCurrency(inventory, 11, Currency.DIAMOND_ORE, balance.diamondOre());
         setCurrency(inventory, 15, Currency.DEEPSLATE_DIAMOND_ORE, balance.deepslateDiamondOre());
         ItemStack close = new ItemStack(Material.BARRIER);
         ItemMeta meta = close.getItemMeta();
-        meta.setDisplayName(msg.text("balance-close"));
+        meta.displayName(msg.component("balance-close"));
         meta.getPersistentDataContainer().set(itemKey, PersistentDataType.STRING, "close");
         close.setItemMeta(meta);
         inventory.setItem(22, close);

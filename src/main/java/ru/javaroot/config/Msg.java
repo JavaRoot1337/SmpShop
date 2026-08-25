@@ -1,6 +1,5 @@
 package ru.javaroot.config;
 
-import org.bukkit.ChatColor;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -44,11 +43,11 @@ public class Msg {
     }
 
     public void send(Player player, String key) {
-        player.sendMessage(text(key));
+        player.sendMessage(component(key));
     }
 
     public void send(Player player, String key, Map<String, ?> values) {
-        player.sendMessage(text(key, values));
+        player.sendMessage(component(key, values));
     }
 
     public void sendCode(Player player, String code) {
@@ -69,11 +68,19 @@ public class Msg {
     }
 
     public String text(String key) {
-        return color(raw(key));
+        return LegacyComponentSerializer.legacySection().serialize(component(key));
     }
 
     public String text(String key, Map<String, ?> values) {
-        return color(raw(key, values));
+        return LegacyComponentSerializer.legacySection().serialize(component(key, values));
+    }
+
+    public Component component(String key) {
+        return LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key));
+    }
+
+    public Component component(String key, Map<String, ?> values) {
+        return LegacyComponentSerializer.legacyAmpersand().deserialize(raw(key, values));
     }
 
     public String raw(String key) {
@@ -91,10 +98,6 @@ public class Msg {
             value = value.replace("%" + entry.getKey() + "%", String.valueOf(entry.getValue()));
         }
         return value;
-    }
-
-    private String color(String value) {
-        return ChatColor.translateAlternateColorCodes('&', value);
     }
 
     private FileConfiguration loadDefaults(String resource) {

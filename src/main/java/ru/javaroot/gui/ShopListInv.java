@@ -17,6 +17,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import net.kyori.adventure.text.Component;
 import ru.javaroot.config.Cfg;
 import ru.javaroot.config.Msg;
 import ru.javaroot.currency.Currency;
@@ -145,13 +146,13 @@ public class ShopListInv implements Listener {
         Material material = mostCommon(location);
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(msg.text("list-shop-name", Map.of("id", shop.id())));
-        meta.setLore(List.of(
-                msg.text("list-owner", Map.of("owner", shop.ownerName())),
-                msg.text("list-coordinates", Map.of("x", shop.x1(), "y", shop.y1(), "z", shop.z1())),
-                msg.text("list-earned", Map.of("earned", shop.earnedTotal())),
-                msg.text("list-sold", Map.of("sold", shop.soldItems())),
-                msg.text("list-price", Map.of("price", shop.price()))
+        meta.displayName(msg.component("list-shop-name", Map.of("id", shop.id())));
+        meta.lore(List.of(
+                msg.component("list-owner", Map.of("owner", shop.ownerName())),
+                msg.component("list-coordinates", Map.of("x", shop.x1(), "y", shop.y1(), "z", shop.z1())),
+                msg.component("list-earned", Map.of("earned", shop.earnedTotal())),
+                msg.component("list-sold", Map.of("sold", shop.soldItems())),
+                msg.component("list-price", Map.of("price", shop.price()))
         ));
         meta.getPersistentDataContainer().set(guiKey, PersistentDataType.STRING, "list");
         meta.getPersistentDataContainer().set(shopKey, PersistentDataType.LONG, shop.id());
@@ -175,7 +176,7 @@ public class ShopListInv implements Listener {
     }
 
     private Inventory create(int page, int pages, List<Shop> pageShops, List<ItemStack> icons) {
-        Inventory inventory = Bukkit.createInventory(null, cfg.menuSize(), msg.text("list-title", Map.of("page", page + 1)));
+        Inventory inventory = Bukkit.createInventory(null, cfg.menuSize(), msg.component("list-title", Map.of("page", page + 1)));
         for (int index = 0; index < icons.size(); index++) {
             ItemStack item = icons.get(index);
             ItemMeta meta = item.getItemMeta();
@@ -184,18 +185,18 @@ public class ShopListInv implements Listener {
             inventory.setItem(index, item);
         }
         if (page > 0) {
-            inventory.setItem(cfg.menuSize() - 9, navigation("previous", page, msg.text("list-previous")));
+            inventory.setItem(cfg.menuSize() - 9, navigation("previous", page, msg.component("list-previous")));
         }
         if (page + 1 < pages) {
-            inventory.setItem(cfg.menuSize() - 1, navigation("next", page, msg.text("list-next")));
+            inventory.setItem(cfg.menuSize() - 1, navigation("next", page, msg.component("list-next")));
         }
         return inventory;
     }
 
-    private ItemStack navigation(String direction, int page, String name) {
+    private ItemStack navigation(String direction, int page, Component name) {
         ItemStack item = new ItemStack("next".equals(direction) ? Material.ARROW : Material.SPECTRAL_ARROW);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(name);
+        meta.displayName(name);
         meta.getPersistentDataContainer().set(guiKey, PersistentDataType.STRING, "list");
         meta.getPersistentDataContainer().set(navKey, PersistentDataType.STRING, direction);
         meta.getPersistentDataContainer().set(pageKey, PersistentDataType.INTEGER, page);

@@ -1,6 +1,5 @@
 package ru.javaroot.list;
 
-import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -22,6 +21,8 @@ import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import ru.javaroot.scheduler.Sched;
 import ru.javaroot.shop.Shop;
 import ru.javaroot.shop.ShopKey;
@@ -117,9 +118,9 @@ public class ShopProtect implements Listener {
                 return;
             }
             Chest chest = (Chest) block.getState();
-            String name = chest.getCustomName();
-            if (name != null && ChatColor.stripColor(name).startsWith("Магазин игрока: ")) {
-                chest.setCustomName(null);
+            Component name = chest.customName();
+            if (name != null && PlainTextComponentSerializer.plainText().serialize(name).startsWith("Магазин игрока: ")) {
+                chest.customName(null);
                 chest.update(true, false);
             }
         });
