@@ -5,20 +5,21 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import ru.javaroot.config.LoggerLoc;
 import ru.javaroot.config.OtherMsg;
 import ru.javaroot.data.LinkStore;
 import ru.javaroot.integration.ExternalMsg;
 import ru.javaroot.integration.SaleLog;
+import ru.javaroot.integration.BoundedHttp;
 import ru.javaroot.scheduler.Sched;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 public class TelegramBot {
@@ -26,34 +27,43 @@ public class TelegramBot {
     private final LinkStore links;
     private final ExternalMsg messages;
     private final OtherMsg other;
-    private final HttpClient http;
+    private final LoggerLoc loggerLoc;
+    private final BoundedHttp http;
     private final int pollSeconds;
     private final String api;
     private final AtomicBoolean polling = new AtomicBoolean();
+    private final AtomicLong generation = new AtomicLong();
     private long offset;
     private ScheduledTask task;
     private boolean warned;
+    private int failures;
+    private long nextPollAt;
 
-    public TelegramBot(Logger logger, LinkStore links, ExternalMsg messages, OtherMsg other, String token, int pollSeconds) {
+    public TelegramBot(Logger logger, LinkStore links, ExternalMsg messages, OtherMsg other, LoggerLoc loggerLoc,
+                       String token, int pollSeconds, BoundedHttp http) {
         this.logger = logger;
         this.links = links;
         this.messages = messages;
         this.other = other;
+        this.loggerLoc = loggerLoc;
         this.pollSeconds = Math.max(1, pollSeconds);
         this.api = "https://api.telegram.org/bot" + token;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        this.http = http;
     }
 
     public void start(Sched sched) {
+        long currentGeneration = generation.incrementAndGet();
         HttpRequest request = HttpRequest.newBuilder(URI.create(api + "/deleteWebhook?drop_pending_updates=false"))
                 .timeout(Duration.ofSeconds(15))
                 .GET()
                 .build();
-        http.sendAsync(request, HttpResponse.BodyHandlers.ofString());
-        task = sched.asyncRepeating(pollSeconds, pollSeconds, java.util.concurrent.TimeUnit.SECONDS, ignored -> poll());
+        http.send(request);
+        task = sched.asyncRepeating(pollSeconds, pollSeconds, java.util.concurrent.TimeUnit.SECONDS,
+                ignored -> poll(currentGeneration));
     }
 
     public void stop() {
+        generation.incrementAndGet();
         if (task != null) {
             task.cancel();
             task = null;
@@ -67,7 +77,7 @@ public class TelegramBot {
             }
             String text = messages.text("sale", Map.of(
                     "shop", sale.shopName(),
-                    "item", sale.item(),
+                    "item", loggerLoc.name(sale.material()),
                     "items", sale.items(),
                     "amount", sale.amount()
             ));
@@ -75,8 +85,9 @@ public class TelegramBot {
         });
     }
 
-    private void poll() {
-        if (!polling.compareAndSet(false, true)) {
+    private void poll(long currentGeneration) {
+        if (currentGeneration != generation.get() || System.currentTimeMillis() < nextPollAt
+                || !polling.compareAndSet(false, true)) {
             return;
         }
         try {
@@ -84,7 +95,10 @@ public class TelegramBot {
                     .timeout(Duration.ofSeconds(15))
                     .GET()
                     .build();
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            BoundedHttp.Response response = http.send(request).join();
+            if (currentGeneration != generation.get()) {
+                return;
+            }
             if (response.statusCode() / 100 != 2) {
                 warn(other.raw("telegram-http-error", Map.of("status", response.statusCode())));
                 return;
@@ -95,14 +109,19 @@ public class TelegramBot {
                 return;
             }
             warned = false;
+            failures = 0;
             JsonArray updates = root.getAsJsonArray("result");
             for (JsonElement element : updates) {
                 JsonObject update = element.getAsJsonObject();
                 offset = update.get("update_id").getAsLong() + 1;
-                handle(update);
+                if (currentGeneration == generation.get()) {
+                    handle(update);
+                }
             }
         } catch (Exception exception) {
-            warn(other.raw("telegram-poll-error", Map.of("error", String.valueOf(exception.getMessage()))));
+            failures = Math.min(failures + 1, 6);
+            nextPollAt = System.currentTimeMillis() + (1L << failures) * 1000L;
+            warn(other.raw("telegram-poll-error", Map.of("error", "request failed")));
         } finally {
             polling.set(false);
         }
@@ -155,12 +174,12 @@ public class TelegramBot {
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build();
-        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenAccept(response -> {
+        return http.send(request).thenAccept(response -> {
             if (response.statusCode() / 100 != 2) {
                 warn(other.raw("telegram-message-http-error", Map.of("status", response.statusCode())));
             }
         }).exceptionally(error -> {
-            warn(other.raw("telegram-send-error", Map.of("error", String.valueOf(error.getMessage()))));
+            warn(other.raw("telegram-send-error", Map.of("error", "request failed")));
             return null;
         });
     }

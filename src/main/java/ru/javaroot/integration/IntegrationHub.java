@@ -1,6 +1,7 @@
 package ru.javaroot.integration;
 
 import ru.javaroot.config.Cfg;
+import ru.javaroot.config.LoggerLoc;
 import ru.javaroot.config.OtherMsg;
 import ru.javaroot.data.LinkStore;
 import ru.javaroot.data.WebhookStore;
@@ -22,18 +23,24 @@ public class IntegrationHub {
     private final ExternalMsg discordMessages;
     private final Cfg cfg;
     private final OtherMsg other;
+    private final LoggerLoc loggerLoc;
+    private final BoundedHttp http;
     private final Map<UUID, DiscordWebhook> discordWebhooks = new ConcurrentHashMap<>();
     private TelegramBot telegram;
 
     public IntegrationHub(Logger logger, LinkStore links, WebhookStore webhooks, Cfg cfg, OtherMsg other,
+                          LoggerLoc loggerLoc,
                           ExternalMsg telegramMessages, ExternalMsg discordMessages) {
         this.logger = logger;
         this.links = links;
         this.webhooks = webhooks;
         this.cfg = cfg;
         this.other = other;
+        this.loggerLoc = loggerLoc;
         this.telegramMessages = telegramMessages;
         this.discordMessages = discordMessages;
+        this.http = new BoundedHttp(cfg.httpMaxConcurrent(), cfg.httpConnectTimeoutSeconds(),
+                cfg.httpResponseLimitBytes());
     }
 
     public void start(Sched sched) {
@@ -41,7 +48,8 @@ public class IntegrationHub {
             if (cfg.telegramToken() == null || cfg.telegramToken().isBlank()) {
                 logger.warning(other.raw("telegram-token-empty-log"));
             } else {
-                telegram = new TelegramBot(logger, links, telegramMessages, other, cfg.telegramToken(), cfg.telegramPollIntervalSeconds());
+                telegram = new TelegramBot(logger, links, telegramMessages, other, loggerLoc,
+                        cfg.telegramToken(), cfg.telegramPollIntervalSeconds(), http);
                 telegram.start(sched);
             }
         }
@@ -51,7 +59,7 @@ public class IntegrationHub {
         discordWebhooks.clear();
         saved.forEach((playerId, webhook) -> {
             if (DiscordWebhook.isValid(webhook)) {
-                discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other));
+                discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other, loggerLoc, http));
             }
         });
     }
@@ -84,7 +92,7 @@ public class IntegrationHub {
             return CompletableFuture.completedFuture(false);
         }
         return webhooks.save(playerId, webhook).thenApply(ignored -> {
-            discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other));
+            discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other, loggerLoc, http));
             return true;
         });
     }
@@ -102,6 +110,7 @@ public class IntegrationHub {
     }
 
     public void reloadMessages() {
+        loggerLoc.reload();
         telegramMessages.reload();
         discordMessages.reload();
     }

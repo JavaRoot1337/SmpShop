@@ -8,17 +8,25 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.ClickType;
-import org.bukkit.event.inventory.DragType;
 import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import ru.javaroot.config.Msg;
+import ru.javaroot.api.CurrencyAmounts;
+import ru.javaroot.api.ShopPosition;
+import ru.javaroot.api.ShopSnapshot;
+import ru.javaroot.api.event.AdjustmentType;
+import ru.javaroot.api.event.PurchaseAdjustment;
+import ru.javaroot.api.event.ShopPurchaseCompletedEvent;
+import ru.javaroot.api.event.ShopPurchasePrepareEvent;
+import ru.javaroot.api.event.ShopTransactionRolledBackEvent;
 import ru.javaroot.currency.Currency;
 import ru.javaroot.data.BalanceStore;
 import ru.javaroot.data.ShopStore;
@@ -39,8 +47,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.List;
+import com.google.gson.Gson;
 
 public class ShopTrade implements Listener {
     private final ShopMgr shops;
@@ -56,6 +67,8 @@ public class ShopTrade implements Listener {
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
     private final Map<UUID, EnumMap<Currency, Long>> pendingReturns = new ConcurrentHashMap<>();
     private final Set<Long> lockedShops = ConcurrentHashMap.newKeySet();
+    private final Gson gson = new Gson();
+    private volatile boolean accepting;
 
     public ShopTrade(ShopMgr shops, ShopStore shopStore, BalanceStore balances, IntegrationHub integrations,
                      NotifySvc notifications, SoundSvc sounds, Msg msg, ItemName itemNames, Sched sched,
@@ -75,6 +88,11 @@ public class ShopTrade implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onOpen(InventoryOpenEvent event) {
         if (!(event.getPlayer() instanceof Player player)) {
+            return;
+        }
+        if (!accepting && (event.getInventory().getHolder() instanceof Chest
+                || event.getInventory().getHolder() instanceof DoubleChest)) {
+            event.setCancelled(true);
             return;
         }
         Shop shop = findShop(event.getInventory());
@@ -99,9 +117,21 @@ public class ShopTrade implements Listener {
             msg.send(player, "shop-busy");
             return;
         }
-        Session session = new Session(shop, event.getInventory());
+        org.bukkit.World world = Bukkit.getWorld(shop.worldId());
+        if (world == null) {
+            event.setCancelled(true);
+            return;
+        }
+        Session session = new Session(shop, event.getInventory(), event.getView().title(),
+                new org.bukkit.Location(world, shop.x1(), shop.y1(), shop.z1()));
         if (lockedShops.add(shop.id())) {
             sessions.put(player.getUniqueId(), session);
+            event.setCancelled(true);
+            sched.entity(player, () -> {
+                if (sessions.get(player.getUniqueId()) == session) {
+                    player.openInventory(session.inventory);
+                }
+            }, () -> close(player.getUniqueId(), null));
         } else {
             event.setCancelled(true);
             msg.send(player, "shop-busy");
@@ -118,15 +148,10 @@ public class ShopTrade implements Listener {
             return;
         }
         event.setCancelled(true);
-        if (event.getRawSlot() < 0) {
+        if (session.purchasePending) {
             return;
         }
-        if (session.pendingProductActive) {
-            if (event.getRawSlot() >= session.inventory.getSize()) {
-                placePendingProduct(event, player, session);
-            } else {
-                returnPendingProduct(event, session);
-            }
+        if (event.getRawSlot() < 0) {
             return;
         }
         if (event.getRawSlot() >= session.inventory.getSize()) {
@@ -160,12 +185,7 @@ public class ShopTrade implements Listener {
             Session session = sessions.get(player.getUniqueId());
             if (session != null && event.getView().getTopInventory() == session.inventory) {
                 event.setCancelled(true);
-                if (session.pendingProductActive) {
-                    if (isPendingProductDrag(event, session)) {
-                        placePendingProduct(event, player, session);
-                    } else {
-                        returnPendingProduct(event, session);
-                    }
+                if (session.purchasePending) {
                     return;
                 }
                 if (isPaymentDrag(event, session)) {
@@ -184,8 +204,34 @@ public class ShopTrade implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        event.getPlayer().getOpenInventory().setCursor(null);
         close(event.getPlayer().getUniqueId(), null);
+    }
+
+    public boolean isBusy(long shopId) {
+        return lockedShops.contains(shopId);
+    }
+
+    public void start() {
+        accepting = true;
+    }
+
+    public void stopInput() {
+        accepting = false;
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        deliverPending(event.getPlayer());
+        deliverRecovery(event.getPlayer());
+    }
+
+    public CompletableFuture<Void> recover() {
+        return shopStore.preparedTransactions().thenCompose(transactions -> {
+            List<CompletableFuture<Void>> recoveries = transactions.stream()
+                    .map(this::recover)
+                    .toList();
+            return CompletableFuture.allOf(recoveries.toArray(CompletableFuture[]::new));
+        });
     }
 
     public void closeAll() {
@@ -211,35 +257,231 @@ public class ShopTrade implements Listener {
             msg.send(player, "purchase-insufficient");
             return;
         }
-        session.pendingSlot = slot;
-        session.pendingProduct = product.clone();
-        session.pendingProductActive = true;
-        session.inventory.setItem(slot, null);
-        event.getView().setCursor(session.pendingProduct.clone());
+        if (!canFit(player.getInventory(), product)) {
+            return;
+        }
+        preparePurchase(player, session, shop, slot, product.clone());
     }
 
-    private void completePurchase(Player player, Session session, Shop shop, ItemStack product) {
-        EnumMap<Currency, Long> payment = takePayment(session, shop.price());
-        int itemSlot = session.pendingSlot;
-        session.clearPendingProduct();
+    private void preparePurchase(Player player, Session session, Shop shop, int slot, ItemStack product) {
+        UUID transactionId = UUID.randomUUID();
+        EnumMap<Currency, Long> basePayment = paymentPlan(session, shop.price());
+        ShopPurchasePrepareEvent event = new ShopPurchasePrepareEvent(transactionId, player.getUniqueId(),
+                snapshot(shop), amounts(basePayment));
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            return;
+        }
+        Payment payment = adjustedPayment(session, basePayment, event.adjustments());
+        if (payment == null) {
+            msg.send(player, "purchase-insufficient");
+            return;
+        }
+        session.purchasePending = true;
+        shopStore.prepareSale(transactionId.toString(), shop, player.getUniqueId(), slot,
+                        product.getAmount(), shop.price(), payment.buyer, payment.seller,
+                        product.serializeAsBytes(), gson.toJson(event.adjustments()))
+                .thenRun(() -> {
+                    if (sched.entity(player, () -> escrowAndComplete(player, session, shop,
+                            slot, product, transactionId, payment, event.adjustments()),
+                            () -> cancelPrepared(player, session, transactionId, Map.of()))
+                            != Sched.ScheduleResult.SCHEDULED) {
+                        cancelPrepared(player, session, transactionId, Map.of());
+                    }
+                })
+                .exceptionally(error -> {
+                    finishPending(player.getUniqueId(), session);
+                    logger.log(Level.SEVERE, "Не удалось подготовить продажу #" + shop.id(), error);
+                    return null;
+                });
+    }
+
+    private void escrowAndComplete(Player player, Session session, Shop shop, int slot,
+                                   ItemStack product, UUID transactionId, Payment payment,
+                                   List<PurchaseAdjustment> adjustments) {
+        if (sessions.get(player.getUniqueId()) != session || !session.purchasePending) {
+            shopStore.rollback(transactionId.toString(), player.getUniqueId(), Map.of());
+            return;
+        }
+        ItemStack current = session.inventory.getItem(slot);
+        if (current == null || !current.isSimilar(product) || current.getAmount() != product.getAmount()
+                || !hasPayment(session, payment.buyer)) {
+            cancelPrepared(player, session, transactionId, Map.of());
+            return;
+        }
+        session.inventory.setItem(slot, null);
+        takePayment(session, payment.buyer);
+        if (sched.region(session.location, () -> takePhysicalAndComplete(player, session, shop,
+                slot, product, transactionId, payment, adjustments)) != Sched.ScheduleResult.SCHEDULED) {
+            restoreFailedPurchase(player, session, shop, product, transactionId, payment.buyer,
+                    slot, new IllegalStateException("Shop region is unavailable"));
+        }
+    }
+
+    private void takePhysicalAndComplete(Player player, Session session, Shop shop, int slot,
+                                         ItemStack product, UUID transactionId, Payment payment,
+                                         List<PurchaseAdjustment> adjustments) {
+        ItemStack physical = session.physical.getItem(slot);
+        if (physical == null || !physical.isSimilar(product) || physical.getAmount() != product.getAmount()) {
+            restoreFailedPurchase(player, session, shop, product, transactionId, payment.buyer,
+                    slot, new IllegalStateException("Shop item changed before commit"));
+            return;
+        }
+        session.physical.setItem(slot, null);
+        completePurchase(player, session, shop, product, transactionId, payment, adjustments, slot);
+    }
+
+    private void completePurchase(Player player, Session session, Shop shop, ItemStack product,
+                                  UUID transactionId, Payment payment,
+                                  List<PurchaseAdjustment> adjustments, int itemSlot) {
         int items = product.getAmount();
         long amount = shop.price();
         SaleLog sale = new SaleLog(shop.ownerId(), shop.id(), "#" + shop.id(), product.getType(), items, amount);
-        shopStore.settleSale(UUID.randomUUID().toString(), shop, player.getUniqueId(), itemSlot, items, amount, payment)
-                .thenRun(() -> {
+        shopStore.completeSale(transactionId.toString(), shop, items, payment.seller)
+                .thenAccept(completed -> {
+                    if (!completed) {
+                        restoreFailedPurchase(player, session, shop, product, transactionId, payment.buyer, itemSlot,
+                                new IllegalStateException("Transaction is no longer prepared"));
+                        return;
+                    }
                     shops.recordSale(shop.id(), amount, items);
                     integrations.sale(sale);
-                    sched.entity(player, () -> {
-                        sounds.buyerPurchase(player);
-                        msg.send(player, "purchase-success", Map.of("items", items, "amount", amount),
-                                Map.of("item", itemNames.component(product.getType())));
-                        notifications.sale(sale, Bukkit.getPlayer(shop.ownerId()));
-                    });
+                    notifications.sale(sale, transactionId);
+                    Bukkit.getPluginManager().callEvent(new ShopPurchaseCompletedEvent(transactionId,
+                            player.getUniqueId(), snapshot(shop), amount, amounts(payment.buyer),
+                            amounts(payment.seller), adjustments));
+                    finishPending(player.getUniqueId(), session);
+                    deliver(player, transactionId.toString(), product, items, amount);
                 })
                 .exceptionally(error -> {
-                    logger.log(Level.SEVERE, "Не удалось завершить продажу #" + shop.id(), error);
+                    restoreFailedPurchase(player, session, shop, product, transactionId,
+                            payment.buyer, itemSlot, error);
                     return null;
                 });
+    }
+
+    private void deliver(Player player, String transactionId, ItemStack product, int items, long amount) {
+        sched.entity(player, () -> {
+            if (!player.isOnline() || !canFit(player.getInventory(), product)) {
+                return;
+            }
+            Map<Integer, ItemStack> overflow = player.getInventory().addItem(product.clone());
+            if (!overflow.isEmpty()) {
+                return;
+            }
+            shopStore.delivered(transactionId);
+            sounds.buyerPurchase(player);
+            msg.send(player, "purchase-success", Map.of("items", items, "amount", amount),
+                    Map.of("item", itemNames.component(product.getType())));
+        });
+    }
+
+    private void deliverPending(Player player) {
+        shopStore.pendingDeliveries(player.getUniqueId()).thenAccept(pending -> sched.entity(player, () -> {
+            for (ShopStore.PendingDelivery delivery : pending) {
+                ItemStack product = ItemStack.deserializeBytes(delivery.itemSnapshot());
+                if (!canFit(player.getInventory(), product)) {
+                    return;
+                }
+                if (player.getInventory().addItem(product).isEmpty()) {
+                    shopStore.delivered(delivery.transactionId());
+                }
+            }
+        }));
+    }
+
+    private void deliverRecovery(Player player) {
+        shopStore.recoveryItems(player.getUniqueId()).thenAccept(items -> sched.entity(player, () -> {
+            for (ShopStore.RecoveryItem recovery : items) {
+                ItemStack item = ItemStack.deserializeBytes(recovery.itemSnapshot());
+                if (!canFit(player.getInventory(), item)) {
+                    return;
+                }
+                if (player.getInventory().addItem(item).isEmpty()) {
+                    shopStore.recoveryDelivered(recovery.id());
+                }
+            }
+        }));
+    }
+
+    private CompletableFuture<Void> recover(ShopStore.PreparedTransaction transaction) {
+        CompletableFuture<Void> recovered = new CompletableFuture<>();
+        Shop shop = shops.find(transaction.shopId());
+        if (shop == null) {
+            finishRecovery(transaction, true, recovered);
+            return recovered;
+        }
+        if (sched.global(() -> {
+            org.bukkit.World world = Bukkit.getWorld(shop.worldId());
+            if (world == null) {
+                finishRecovery(transaction, true, recovered);
+                return;
+            }
+            org.bukkit.Location location = new org.bukkit.Location(world, shop.x1(), shop.y1(), shop.z1());
+            if (sched.region(location, () -> recoverOnRegion(transaction, shop, location, recovered))
+                    != Sched.ScheduleResult.SCHEDULED) {
+                finishRecovery(transaction, true, recovered);
+            }
+        }) != Sched.ScheduleResult.SCHEDULED) {
+            finishRecovery(transaction, true, recovered);
+        }
+        return recovered;
+    }
+
+    private void recoverOnRegion(ShopStore.PreparedTransaction transaction, Shop shop,
+                                 org.bukkit.Location location, CompletableFuture<Void> recovered) {
+        if (location.getBlock().getType() != org.bukkit.Material.CHEST) {
+            finishRecovery(transaction, true, recovered);
+            return;
+        }
+        Inventory inventory = ((Chest) location.getBlock().getState()).getInventory();
+        ItemStack product = ItemStack.deserializeBytes(transaction.itemSnapshot());
+        ItemStack current = inventory.getItem(transaction.itemSlot());
+        boolean recoverItem = current != null && (!current.isSimilar(product)
+                || current.getAmount() != product.getAmount());
+        if (current == null) {
+            inventory.setItem(transaction.itemSlot(), product);
+        }
+        finishRecovery(transaction, recoverItem, recovered);
+    }
+
+    private void finishRecovery(ShopStore.PreparedTransaction transaction, boolean recoverItem,
+                                CompletableFuture<Void> recovered) {
+        shopStore.recoverRollback(transaction, recoverItem).whenComplete((ignored, error) -> {
+            if (error != null) {
+                recovered.completeExceptionally(error);
+                return;
+            }
+            Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
+                    UUID.fromString(transaction.transactionId()), transaction.shopId(), transaction.buyerId()));
+            recovered.complete(null);
+        });
+    }
+
+    private void restoreFailedPurchase(Player player, Session session, Shop shop, ItemStack product,
+                                       UUID transactionId, Map<Currency, Long> payment,
+                                       int itemSlot, Throwable error) {
+        logger.log(Level.SEVERE, "Не удалось завершить продажу #" + shop.id(), error);
+        sched.region(session.location, () -> {
+            if (session.physical.getItem(itemSlot) == null) {
+                session.physical.setItem(itemSlot, product.clone());
+            }
+        });
+        sched.entity(player, () -> {
+            if (sessions.get(player.getUniqueId()) == session && session.inventory.getItem(itemSlot) == null) {
+                session.inventory.setItem(itemSlot, product.clone());
+            }
+            finishPending(player.getUniqueId(), session);
+        }, () -> finishPending(player.getUniqueId(), session));
+        shopStore.rollback(transactionId.toString(), player.getUniqueId(), payment)
+                .thenRun(() -> Bukkit.getPluginManager().callEvent(
+                        new ShopTransactionRolledBackEvent(transactionId, shop.id(), player.getUniqueId())));
+    }
+
+    private void cancelPrepared(Player player, Session session, UUID transactionId,
+                                Map<Currency, Long> refund) {
+        finishPending(player.getUniqueId(), session);
+        shopStore.rollback(transactionId.toString(), player.getUniqueId(), refund);
     }
 
     private boolean isProductPickup(InventoryClickEvent event, Session session) {
@@ -360,113 +602,6 @@ public class ShopTrade implements Listener {
         return topPayment || bottomInventory;
     }
 
-    private void placePendingProduct(InventoryClickEvent event, Player player, Session session) {
-        if (!isPendingProductClick(event, session)) {
-            return;
-        }
-        Shop shop = shops.find(session.shop.id());
-        if (shop == null || paymentTotal(session) < shop.price()) {
-            return;
-        }
-        int slot = event.getSlot();
-        ItemStack product = session.pendingProduct.clone();
-        ItemStack target = event.getCurrentItem();
-        Inventory bottom = event.getView().getBottomInventory();
-        if (isEmpty(target)) {
-            bottom.setItem(slot, product);
-        } else {
-            target.setAmount(target.getAmount() + product.getAmount());
-        }
-        event.getView().setCursor(null);
-        completePurchase(player, session, shop, product);
-    }
-
-    private void placePendingProduct(InventoryDragEvent event, Player player, Session session) {
-        if (!isPendingProductDrag(event, session)) {
-            return;
-        }
-        Shop shop = shops.find(session.shop.id());
-        if (shop == null || paymentTotal(session) < shop.price()) {
-            return;
-        }
-        int rawSlot = event.getRawSlots().iterator().next();
-        int slot = rawSlot - session.inventory.getSize();
-        ItemStack product = session.pendingProduct.clone();
-        ItemStack target = event.getView().getBottomInventory().getItem(slot);
-        if (isEmpty(target)) {
-            event.getView().getBottomInventory().setItem(slot, product);
-        } else {
-            target.setAmount(target.getAmount() + product.getAmount());
-        }
-        event.setCursor(null);
-        completePurchase(player, session, shop, product);
-    }
-
-    private boolean isPendingProductClick(InventoryClickEvent event, Session session) {
-        return event.getClick() == ClickType.LEFT
-                && event.getClickedInventory() == event.getView().getBottomInventory()
-                && isPendingCursor(event.getCursor(), session)
-                && canPlaceProduct(event.getCurrentItem(), session.pendingProduct);
-    }
-
-    private boolean isPendingProductDrag(InventoryDragEvent event, Session session) {
-        if (event.getType() != DragType.EVEN
-                || event.getRawSlots().size() != 1
-                || !isPendingCursor(event.getOldCursor(), session)) {
-            return false;
-        }
-        int rawSlot = event.getRawSlots().iterator().next();
-        if (rawSlot < session.inventory.getSize()) {
-            return false;
-        }
-        ItemStack target = event.getView().getBottomInventory().getItem(rawSlot - session.inventory.getSize());
-        return canPlaceProduct(target, session.pendingProduct);
-    }
-
-    private boolean isPendingCursor(ItemStack cursor, Session session) {
-        return session.pendingProductActive && !isEmpty(cursor)
-                && cursor.isSimilar(session.pendingProduct)
-                && cursor.getAmount() == session.pendingProduct.getAmount();
-    }
-
-    private boolean canPlaceProduct(ItemStack target, ItemStack product) {
-        return isEmpty(target)
-                || (target.isSimilar(product)
-                && target.getAmount() + product.getAmount() <= target.getMaxStackSize());
-    }
-
-    private void returnPendingProduct(InventoryClickEvent event, Session session) {
-        if (!isPendingProductReturn(event, session)) {
-            return;
-        }
-        session.inventory.setItem(session.pendingSlot, session.pendingProduct.clone());
-        event.getView().setCursor(null);
-        session.clearPendingProduct();
-    }
-
-    private boolean isPendingProductReturn(InventoryClickEvent event, Session session) {
-        return event.getRawSlot() == session.pendingSlot
-                && event.getClick() == ClickType.LEFT
-                && isEmpty(event.getCurrentItem())
-                && isPendingCursor(event.getCursor(), session);
-    }
-
-    private void returnPendingProduct(InventoryDragEvent event, Session session) {
-        if (event.getType() != DragType.EVEN
-                || event.getRawSlots().size() != 1
-                || !isPendingCursor(event.getOldCursor(), session)
-                || !event.getRawSlots().contains(session.pendingSlot)) {
-            return;
-        }
-        int slot = session.pendingSlot;
-        if (!isEmpty(session.inventory.getItem(slot))) {
-            return;
-        }
-        session.inventory.setItem(slot, session.pendingProduct.clone());
-        event.setCursor(null);
-        session.clearPendingProduct();
-    }
-
     private boolean canAcceptPayment(ItemStack current, Currency currency) {
         return isEmpty(current)
                 || (current.getType() == currency.material() && current.getAmount() < current.getMaxStackSize());
@@ -487,30 +622,101 @@ public class ShopTrade implements Listener {
         return total;
     }
 
-    private EnumMap<Currency, Long> takePayment(Session session, long price) {
+    private EnumMap<Currency, Long> paymentPlan(Session session, long price) {
         EnumMap<Currency, Long> result = new EnumMap<>(Currency.class);
         long remaining = price;
         for (int slot : session.paymentSlots) {
             ItemStack item = session.inventory.getItem(slot);
-            if (item == null) {
-                continue;
-            }
-            Currency currency = Currency.from(item.getType());
+            Currency currency = item == null ? null : Currency.from(item.getType());
             if (currency == null) {
                 continue;
             }
-            int used = (int) Math.min(item.getAmount(), remaining);
-            item.setAmount(item.getAmount() - used);
-            if (item.getAmount() == 0) {
-                session.inventory.setItem(slot, null);
-            }
-            result.merge(currency, (long) used, Long::sum);
+            long used = Math.min(item.getAmount(), remaining);
+            result.merge(currency, used, Long::sum);
             remaining -= used;
             if (remaining == 0) {
                 break;
             }
         }
         return result;
+    }
+
+    private Payment adjustedPayment(Session session, EnumMap<Currency, Long> base,
+                                    List<PurchaseAdjustment> adjustments) {
+        EnumMap<Currency, Long> buyer = new EnumMap<>(base);
+        EnumMap<Currency, Long> seller = new EnumMap<>(base);
+        try {
+            for (PurchaseAdjustment adjustment : adjustments) {
+                for (Currency currency : Currency.values()) {
+                    long value = adjustment.amounts().amount(currency == Currency.DIAMOND_ORE
+                            ? ru.javaroot.api.CurrencyType.DIAMOND_ORE
+                            : ru.javaroot.api.CurrencyType.DEEPSLATE_DIAMOND_ORE);
+                    if (value == 0) {
+                        continue;
+                    }
+                    if (adjustment.type() == AdjustmentType.BUYER_SURCHARGE) {
+                        buyer.put(currency, Math.addExact(buyer.getOrDefault(currency, 0L), value));
+                    } else {
+                        long payout = seller.getOrDefault(currency, 0L);
+                        if (payout < value) {
+                            return null;
+                        }
+                        seller.put(currency, payout - value);
+                    }
+                }
+            }
+        } catch (ArithmeticException exception) {
+            return null;
+        }
+        return hasPayment(session, buyer) ? new Payment(buyer, seller) : null;
+    }
+
+    private boolean hasPayment(Session session, Map<Currency, Long> required) {
+        EnumMap<Currency, Long> available = new EnumMap<>(Currency.class);
+        for (int slot : session.paymentSlots) {
+            ItemStack item = session.inventory.getItem(slot);
+            Currency currency = item == null ? null : Currency.from(item.getType());
+            if (currency != null) {
+                available.merge(currency, (long) item.getAmount(), Long::sum);
+            }
+        }
+        return required.entrySet().stream()
+                .allMatch(entry -> available.getOrDefault(entry.getKey(), 0L) >= entry.getValue());
+    }
+
+    private void takePayment(Session session, Map<Currency, Long> required) {
+        EnumMap<Currency, Long> remaining = new EnumMap<>(Currency.class);
+        remaining.putAll(required);
+        for (int slot : session.paymentSlots) {
+            ItemStack item = session.inventory.getItem(slot);
+            Currency currency = item == null ? null : Currency.from(item.getType());
+            if (currency == null) {
+                continue;
+            }
+            long needed = remaining.getOrDefault(currency, 0L);
+            int used = (int) Math.min(item.getAmount(), needed);
+            if (used == 0) {
+                continue;
+            }
+            item.setAmount(item.getAmount() - used);
+            if (item.getAmount() == 0) {
+                session.inventory.setItem(slot, null);
+            }
+            remaining.put(currency, needed - used);
+        }
+    }
+
+    private CurrencyAmounts amounts(Map<Currency, Long> values) {
+        return new CurrencyAmounts(values.getOrDefault(Currency.DIAMOND_ORE, 0L),
+                values.getOrDefault(Currency.DEEPSLATE_DIAMOND_ORE, 0L));
+    }
+
+    private ShopSnapshot snapshot(Shop shop) {
+        ShopPosition first = new ShopPosition(shop.worldId(), shop.x1(), shop.y1(), shop.z1());
+        ShopPosition second = shop.x2() == null ? null
+                : new ShopPosition(shop.worldId(), shop.x2(), shop.y2(), shop.z2());
+        return new ShopSnapshot(shop.id(), shop.ownerId(), shop.ownerName(), first, second,
+                shop.price(), shop.earnedTotal(), shop.soldSlots(), shop.soldItems(), shop.createdAt());
     }
 
     private void givePayment(Player player, Map<Currency, Long> payment) {
@@ -554,13 +760,8 @@ public class ShopTrade implements Listener {
         if (session == null) {
             return;
         }
-        lockedShops.remove(session.shop.id());
-        if (session.pendingProductActive) {
-            session.inventory.setItem(session.pendingSlot, session.pendingProduct.clone());
-            if (player != null) {
-                player.getOpenInventory().setCursor(null);
-            }
-            session.clearPendingProduct();
+        if (!session.purchasePending) {
+            lockedShops.remove(session.shop.id());
         }
         EnumMap<Currency, Long> returned = new EnumMap<>(Currency.class);
         for (int slot : session.paymentSlots) {
@@ -601,6 +802,13 @@ public class ShopTrade implements Listener {
         }
     }
 
+    private void finishPending(UUID playerId, Session session) {
+        session.purchasePending = false;
+        if (sessions.get(playerId) != session) {
+            lockedShops.remove(session.shop.id());
+        }
+    }
+
     private Shop findShop(Inventory inventory) {
         InventoryHolder holder = inventory.getHolder();
         if (holder instanceof Chest chest) {
@@ -619,29 +827,30 @@ public class ShopTrade implements Listener {
 
     private static class Session {
         private final Shop shop;
+        private final Inventory physical;
         private final Inventory inventory;
         private final Map<Integer, ItemStack> snapshot = new HashMap<>();
         private final Set<Integer> paymentSlots = new HashSet<>();
-        private int pendingSlot = -1;
-        private ItemStack pendingProduct;
-        private boolean pendingProductActive;
-        private Session(Shop shop, Inventory inventory) {
+        private final org.bukkit.Location location;
+        private volatile boolean purchasePending;
+        private Session(Shop shop, Inventory physical, net.kyori.adventure.text.Component title,
+                        org.bukkit.Location location) {
             this.shop = shop;
-            this.inventory = inventory;
-            for (int slot = 0; slot < inventory.getSize(); slot++) {
-                ItemStack item = inventory.getItem(slot);
+            this.physical = physical;
+            this.inventory = Bukkit.createInventory(null, physical.getSize(), title);
+            this.location = location;
+            for (int slot = 0; slot < physical.getSize(); slot++) {
+                ItemStack item = physical.getItem(slot);
                 if (item == null || item.getType().isAir()) {
                     paymentSlots.add(slot);
                 } else {
                     snapshot.put(slot, item.clone());
+                    inventory.setItem(slot, item.clone());
                 }
             }
         }
+    }
 
-        private void clearPendingProduct() {
-            pendingSlot = -1;
-            pendingProduct = null;
-            pendingProductActive = false;
-        }
+    private record Payment(EnumMap<Currency, Long> buyer, EnumMap<Currency, Long> seller) {
     }
 }

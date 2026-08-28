@@ -16,6 +16,7 @@ import org.bukkit.inventory.InventoryHolder;
 import ru.javaroot.SmpShop;
 import ru.javaroot.command.ShopCmd;
 import ru.javaroot.config.Msg;
+import ru.javaroot.config.Cfg;
 import ru.javaroot.data.ShopStore;
 import ru.javaroot.scheduler.Sched;
 import ru.javaroot.shop.Shop;
@@ -30,17 +31,22 @@ public class ShopInteract implements Listener {
     private final SmpShop plugin;
     private final ShopCmd command;
     private final Msg msg;
+    private final Cfg cfg;
     private final ShopStore store;
     private final ShopMgr shops;
     private final Sched sched;
+    private final ShopTrade trade;
 
-    public ShopInteract(SmpShop plugin, ShopCmd command, Msg msg, ShopStore store, ShopMgr shops, Sched sched) {
+    public ShopInteract(SmpShop plugin, ShopCmd command, Msg msg, Cfg cfg, ShopStore store,
+                        ShopMgr shops, Sched sched, ShopTrade trade) {
         this.plugin = plugin;
         this.command = command;
         this.msg = msg;
+        this.cfg = cfg;
         this.store = store;
         this.shops = shops;
         this.sched = sched;
+        this.trade = trade;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -79,7 +85,8 @@ public class ShopInteract implements Listener {
     private void place(Player player, Location location, ShopCmd.Action action) {
         List<Location> locations = chestLocations(location);
         List<ShopKey> keys = locations.stream().map(ShopKey::of).toList();
-        if (!shops.tryReserve(keys)) {
+        int limit = player.hasPermission("smpshop.plus") ? cfg.plusShopLimit() : cfg.regularShopLimit();
+        if (!shops.tryReserve(player.getUniqueId(), limit, keys)) {
             msg.send(player, "shop-conflict");
             command.clearAction(player.getUniqueId());
             return;
@@ -95,17 +102,17 @@ public class ShopInteract implements Listener {
             boolean invalid = locations.stream().anyMatch(loc -> loc.getBlock().getType() != Material.CHEST);
             boolean conflict = keys.stream().anyMatch(key -> shops.find(key) != null);
             if (invalid || conflict) {
-                shops.release(keys);
+                shops.release(player.getUniqueId(), keys);
                 store.delete(id);
                 sched.entity(player, () -> msg.send(player, "shop-conflict"));
                 return;
             }
             Shop shop = new Shop(id, draft.ownerId(), draft.ownerName(), draft.worldId(), draft.x1(), draft.y1(), draft.z1(), draft.x2(), draft.y2(), draft.z2(), draft.price(), 0, 0, 0, draft.createdAt(), true);
             shops.add(shop);
-            shops.release(keys);
+            shops.release(player.getUniqueId(), keys);
             sched.entity(player, () -> msg.send(player, "shop-created", Map.of("price", shop.price())));
         })).exceptionally(error -> {
-            shops.release(keys);
+            shops.release(player.getUniqueId(), keys);
             plugin.getLogger().warning("Не удалось сохранить магазин: " + error.getMessage());
             return null;
         });
@@ -113,7 +120,22 @@ public class ShopInteract implements Listener {
 
     private void delete(Player player, Shop shop) {
         command.clearAction(player.getUniqueId());
-        Location location = new Location(Bukkit.getWorld(shop.worldId()), shop.x1(), shop.y1(), shop.z1());
+        if (trade.isBusy(shop.id())) {
+            msg.send(player, "shop-busy");
+            return;
+        }
+        org.bukkit.World world = Bukkit.getWorld(shop.worldId());
+        if (world == null) {
+            store.delete(shop.id()).thenRun(() -> {
+                shops.remove(shop);
+                sched.entity(player, () -> msg.send(player, "shop-deleted"));
+            }).exceptionally(error -> {
+                plugin.getLogger().warning("Не удалось удалить магазин: " + error.getMessage());
+                return null;
+            });
+            return;
+        }
+        Location location = new Location(world, shop.x1(), shop.y1(), shop.z1());
         store.delete(shop.id()).thenRun(() -> sched.region(location, () -> {
             if (location.getBlock().getType() != Material.CHEST) {
                 shops.remove(shop);
@@ -122,7 +144,10 @@ public class ShopInteract implements Listener {
             }
             shops.remove(shop);
             sched.entity(player, () -> msg.send(player, "shop-deleted"));
-        }));
+        })).exceptionally(error -> {
+            plugin.getLogger().warning("Не удалось удалить магазин: " + error.getMessage());
+            return null;
+        });
     }
 
     private List<Location> chestLocations(Location location) {

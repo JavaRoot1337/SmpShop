@@ -1,10 +1,10 @@
-// code team-dev
 package ru.javaroot.data;
 
 import org.bukkit.plugin.Plugin;
 import org.sqlite.JDBC;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
@@ -22,9 +22,11 @@ public class Sqlite {
     private final Plugin plugin;
     private final String fileName;
     private final int timeoutSeconds;
+    private volatile Thread worker;
     private final ExecutorService queue = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "SMPSHOP-SQLite");
         thread.setDaemon(true);
+        worker = thread;
         return thread;
     });
     private final Object lifecycle = new Object();
@@ -59,10 +61,11 @@ public class Sqlite {
             }
             driver = new JDBC();
             DriverManager.registerDriver(driver);
-            connection = DriverManager.getConnection("jdbc:sqlite:" + file.getPath());
+            Path databaseFile = file.toPath().toAbsolutePath().normalize();
+            connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
             connection.setAutoCommit(true);
             configure(connection);
-            new Migration().apply(connection);
+            new Migration().apply(connection, databaseFile);
             state = State.READY;
         } catch (SQLException exception) {
             closeResources();
@@ -109,6 +112,10 @@ public class Sqlite {
             state = State.CLOSING;
             startup = startFuture;
         }
+        if (Thread.currentThread() == worker) {
+            closeFromQueue();
+            return;
+        }
         if (startup != null && !startup.isDone()) {
             try {
                 startup.get(10, TimeUnit.SECONDS);
@@ -135,6 +142,14 @@ public class Sqlite {
         } else {
             closeResources();
         }
+        synchronized (lifecycle) {
+            state = State.CLOSED;
+        }
+    }
+
+    private void closeFromQueue() {
+        closeResources();
+        queue.shutdown();
         synchronized (lifecycle) {
             state = State.CLOSED;
         }

@@ -1,9 +1,9 @@
 name: SmpShop
 version: '${version}'
 main: ru.javaroot.SmpShop
-api-version: '26.2'
+api-version: '1.21.11'
 folia-supported: true
-description: магазины для спм
+description: магазины игроков на сундуках
 author: JavaRoot
 
 commands:

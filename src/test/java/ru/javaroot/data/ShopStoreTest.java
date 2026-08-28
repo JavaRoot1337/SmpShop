@@ -32,8 +32,12 @@ class ShopStoreTest {
                     draft.x1(), draft.y1(), draft.z1(), draft.x2(), draft.y2(), draft.z2(),
                     draft.price(), draft.earnedTotal(), draft.soldSlots(), draft.soldItems(), draft.createdAt(), true);
 
-            store.settleSale("test-transaction", shop, buyerId, 3, 2, 10,
-                    Map.of(Currency.DIAMOND_ORE, 7L, Currency.DEEPSLATE_DIAMOND_ORE, 3L)).join();
+            Map<Currency, Long> payment = Map.of(
+                    Currency.DIAMOND_ORE, 7L, Currency.DEEPSLATE_DIAMOND_ORE, 3L);
+            store.prepareSale("test-transaction", shop, buyerId, 3, 2, 10,
+                    payment, payment, new byte[]{1, 2, 3}, "[]").join();
+            store.completeSale("test-transaction", shop, 2, payment).join();
+            store.completeSale("test-transaction", shop, 2, payment).join();
 
             var values = db.submit(connection -> {
                 long earned;

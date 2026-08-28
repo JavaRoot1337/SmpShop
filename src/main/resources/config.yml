@@ -30,12 +30,16 @@ notifications:
   join-message-enabled: true #показывать уведомление при входе продавца
 
 integrations:
+  http:
+    max-concurrent: 4
+    connect-timeout-seconds: 10
+    response-limit-bytes: 1048576
   telegram:
     enabled: false #включить телеграм
     bot-token: '' #токен телеграм-бота
-    poll-interval-seconds: 2 #интервал опроса телеграма
+    poll-interval-seconds: 2 #интервал запроса на телеграм бота
     link-code-timeout-seconds: 300 #срок действия кода телеграма
-    referal-bot: true #отправлять реферальную ссылку вместо копирования кода
+    referral-bot: true #отправлять реферальную ссылку вместо копирования кода
     user-bot: '' #имя телеграм-бота без символа @
   discord:
     enabled: false #включить дискорд через вебхук

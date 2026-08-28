@@ -1,14 +1,15 @@
 package ru.javaroot.integration.discord;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
+import ru.javaroot.config.LoggerLoc;
 import ru.javaroot.config.OtherMsg;
 import ru.javaroot.integration.ExternalMsg;
 import ru.javaroot.integration.SaleLog;
+import ru.javaroot.integration.BoundedHttp;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -19,14 +20,17 @@ public class DiscordWebhook {
     private final String webhook;
     private final ExternalMsg messages;
     private final OtherMsg other;
-    private final HttpClient http;
+    private final LoggerLoc loggerLoc;
+    private final BoundedHttp http;
 
-    public DiscordWebhook(Logger logger, String webhook, ExternalMsg messages, OtherMsg other) {
+    public DiscordWebhook(Logger logger, String webhook, ExternalMsg messages, OtherMsg other,
+                          LoggerLoc loggerLoc, BoundedHttp http) {
         this.logger = logger;
         this.webhook = webhook;
         this.messages = messages;
         this.other = other;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        this.loggerLoc = loggerLoc;
+        this.http = http;
     }
 
     public static boolean isValid(String value) {
@@ -48,7 +52,7 @@ public class DiscordWebhook {
     public CompletableFuture<Boolean> sale(SaleLog sale) {
         return send(messages.text("sale", Map.of(
                 "shop", sale.shopName(),
-                "item", sale.item(),
+                "item", loggerLoc.name(sale.material()),
                 "items", sale.items(),
                 "amount", sale.amount()
         )));
@@ -57,12 +61,15 @@ public class DiscordWebhook {
     private CompletableFuture<Boolean> send(String content) {
         JsonObject body = new JsonObject();
         body.addProperty("content", content);
+        JsonObject allowedMentions = new JsonObject();
+        allowedMentions.add("parse", new JsonArray());
+        body.add("allowed_mentions", allowedMentions);
         HttpRequest request = HttpRequest.newBuilder(URI.create(webhook))
                 .timeout(Duration.ofSeconds(15))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build();
-        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        return http.send(request)
                 .thenApply(response -> {
                     if (response.statusCode() / 100 != 2) {
                         logger.warning(other.raw("discord-http-error", Map.of("status", response.statusCode())));

@@ -10,6 +10,8 @@ message-file-update-failed: 'Не удалось обновить файл со�
 external-message-key-missing: 'Не найдено внешнее сообщение %key% в файле %resource%'
 external-message-load-failed: 'Не удалось загрузить внешний файл сообщений: %resource%'
 external-message-update-failed: 'Не удалось обновить внешний файл сообщений: %resource%'
+logger-locate-load-failed: 'Не удалось загрузить файл названий предметов: %resource%'
+logger-locate-invalid-entry: 'Пропущена некорректная запись в logger_locate.yml: %item%'
 telegram-token-empty-log: 'Телеграм включён, но bot-token пустой'
 telegram-disabled: 'Телеграм отключён'
 unknown-sound: 'Неизвестный звук в конфиге: %sound%'

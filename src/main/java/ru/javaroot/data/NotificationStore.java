@@ -14,16 +14,17 @@ public class NotificationStore {
         this.db = db;
     }
 
-    public CompletableFuture<Void> add(UUID playerId, long amount) {
+    public CompletableFuture<Void> add(UUID playerId, long amount, UUID transactionId) {
         if (amount < 1) {
             return CompletableFuture.completedFuture(null);
         }
         return db.submit(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "INSERT INTO notifications(player_uuid, amount, created_at, delivered_at) VALUES (?, ?, ?, NULL)")) {
+                    "INSERT INTO notifications(player_uuid, amount, created_at, delivered_at, transaction_id) VALUES (?, ?, ?, NULL, ?) ON CONFLICT(transaction_id) DO NOTHING")) {
                 statement.setString(1, playerId.toString());
                 statement.setLong(2, amount);
                 statement.setLong(3, System.currentTimeMillis());
+                statement.setString(4, transactionId.toString());
                 statement.executeUpdate();
             }
             return null;

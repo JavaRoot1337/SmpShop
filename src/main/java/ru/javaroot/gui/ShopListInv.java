@@ -119,10 +119,6 @@ public class ShopListInv implements Listener {
             }
             return;
         }
-        Long id = meta.getPersistentDataContainer().get(shopKey, PersistentDataType.LONG);
-        if (id != null) {
-            openShop(player, shops.find(id));
-        }
     }
 
     @EventHandler
@@ -210,24 +206,6 @@ public class ShopListInv implements Listener {
 
     private Component itemText(Component component) {
         return component.decoration(TextDecoration.ITALIC, false);
-    }
-
-    private void openShop(Player player, Shop shop) {
-        if (shop == null) {
-            return;
-        }
-        World world = Bukkit.getWorld(shop.worldId());
-        if (world == null) {
-            return;
-        }
-        Location location = new Location(world, shop.x1(), shop.y1(), shop.z1());
-        sched.region(location, () -> {
-            if (location.getBlock().getType() != Material.CHEST) {
-                return;
-            }
-            Inventory inventory = ((Chest) location.getBlock().getState()).getInventory();
-            sched.entity(player, () -> player.openInventory(inventory));
-        });
     }
 
 }

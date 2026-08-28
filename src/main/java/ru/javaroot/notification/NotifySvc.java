@@ -1,6 +1,7 @@
 package ru.javaroot.notification;
 
 import org.bukkit.entity.Player;
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -41,14 +42,21 @@ public class NotifySvc implements Listener {
         this.sched = sched;
     }
 
-    public void sale(SaleLog sale, Player seller) {
+    public void sale(SaleLog sale, UUID transactionId) {
+        if (sched.global(() -> notifySeller(sale, transactionId)) != Sched.ScheduleResult.SCHEDULED) {
+            saveOffline(sale.sellerId(), sale.amount(), transactionId);
+        }
+    }
+
+    private void notifySeller(SaleLog sale, UUID transactionId) {
+        Player seller = Bukkit.getPlayer(sale.sellerId());
         if (seller == null) {
-            saveOffline(sale.sellerId(), sale.amount());
+            saveOffline(sale.sellerId(), sale.amount(), transactionId);
             return;
         }
         sched.entity(seller, () -> {
             if (!seller.isOnline()) {
-                saveOffline(sale.sellerId(), sale.amount());
+                saveOffline(sale.sellerId(), sale.amount(), transactionId);
                 return;
             }
             msg.send(seller, "sale-chat", Map.of(
@@ -57,7 +65,7 @@ public class NotifySvc implements Listener {
                     "amount", sale.amount()),
                     Map.of("item", itemNames.component(sale.material())));
             sounds.sellerSale(seller);
-        }, () -> saveOffline(sale.sellerId(), sale.amount()));
+        }, () -> saveOffline(sale.sellerId(), sale.amount(), transactionId));
     }
 
     public void start() {
@@ -95,11 +103,11 @@ public class NotifySvc implements Listener {
         });
     }
 
-    private void saveOffline(UUID playerId, long amount) {
+    private void saveOffline(UUID playerId, long amount, UUID transactionId) {
         if (!cfg.offlineNotificationsEnabled()) {
             return;
         }
-        store.add(playerId, amount).exceptionally(error -> {
+        store.add(playerId, amount, transactionId).exceptionally(error -> {
             logger.log(Level.WARNING, other.raw("notification-save-error"), error);
             return null;
         });

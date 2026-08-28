@@ -29,14 +29,17 @@ import ru.javaroot.shop.ShopKey;
 import ru.javaroot.shop.ShopMgr;
 
 import java.util.Collection;
+import java.util.logging.Logger;
 
 public class ShopProtect implements Listener {
     private final ShopMgr shops;
     private final Sched sched;
+    private final Logger logger;
 
-    public ShopProtect(ShopMgr shops, Sched sched) {
+    public ShopProtect(ShopMgr shops, Sched sched, Logger logger) {
         this.shops = shops;
         this.sched = sched;
+        this.logger = logger;
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -71,8 +74,13 @@ public class ShopProtect implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onHopperPlace(BlockPlaceEvent event) {
-        if (event.getBlockPlaced().getType() == Material.HOPPER && isNearShop(event.getBlockPlaced())) {
+    public void onBlockPlace(BlockPlaceEvent event) {
+        Block block = event.getBlockPlaced();
+        if (block.getType() == Material.HOPPER && isNearShop(block)) {
+            event.setCancelled(true);
+            return;
+        }
+        if (block.getType() == Material.CHEST && touchesSingleShop(block)) {
             event.setCancelled(true);
         }
     }
@@ -107,22 +115,43 @@ public class ShopProtect implements Listener {
         }
     }
 
-    private void clearName(java.util.UUID worldId, int x, int y, int z) {
-        Location location = new Location(org.bukkit.Bukkit.getWorld(worldId), x, y, z);
-        if (location.getWorld() == null) {
-            return;
+    public void audit(Collection<Shop> loadedShops) {
+        for (Shop shop : loadedShops) {
+            sched.global(() -> {
+                org.bukkit.World world = org.bukkit.Bukkit.getWorld(shop.worldId());
+                if (world == null) {
+                    logger.warning("Магазин #" + shop.id() + " ссылается на отсутствующий мир");
+                    return;
+                }
+                Location location = new Location(world, shop.x1(), shop.y1(), shop.z1());
+                sched.region(location, () -> {
+                    if (location.getBlock().getType() != Material.CHEST) {
+                        logger.warning("Магазин #" + shop.id() + " ссылается на отсутствующий сундук");
+                    }
+                });
+            });
         }
-        sched.region(location, () -> {
-            Block block = location.getBlock();
-            if (block.getType() != Material.CHEST) {
+    }
+
+    private void clearName(java.util.UUID worldId, int x, int y, int z) {
+        sched.global(() -> {
+            org.bukkit.World world = org.bukkit.Bukkit.getWorld(worldId);
+            if (world == null) {
                 return;
             }
-            Chest chest = (Chest) block.getState();
-            Component name = chest.customName();
-            if (name != null && PlainTextComponentSerializer.plainText().serialize(name).startsWith("Магазин игрока: ")) {
-                chest.customName(null);
-                chest.update(true, false);
-            }
+            Location location = new Location(world, x, y, z);
+            sched.region(location, () -> {
+                Block block = location.getBlock();
+                if (block.getType() != Material.CHEST) {
+                    return;
+                }
+                Chest chest = (Chest) block.getState();
+                Component name = chest.customName();
+                if (name != null && PlainTextComponentSerializer.plainText().serialize(name).startsWith("Магазин игрока: ")) {
+                    chest.customName(null);
+                    chest.update(true, false);
+                }
+            });
         });
     }
 
@@ -151,6 +180,16 @@ public class ShopProtect implements Listener {
         }
         for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
             if (isShopBlock(block.getRelative(face))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean touchesSingleShop(Block block) {
+        for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
+            Shop shop = shops.find(ShopKey.of(block.getRelative(face).getLocation()));
+            if (shop != null && shop.secondKey() == null) {
                 return true;
             }
         }

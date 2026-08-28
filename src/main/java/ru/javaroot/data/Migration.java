@@ -1,4 +1,3 @@
-// code team-dev
 package ru.javaroot.data;
 
 import java.sql.Connection;
@@ -6,14 +5,20 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.nio.file.Path;
 
 public class Migration {
-    public void apply(Connection connection) throws SQLException {
+    private static final int LATEST_VERSION = 10;
+
+    public void apply(Connection connection, Path databaseFile) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)");
         }
         int current = currentVersion(connection);
-        for (int version = current + 1; version <= 7; version++) {
+        if (current > 0 && current < LATEST_VERSION) {
+            backup(connection, databaseFile);
+        }
+        for (int version = current + 1; version <= LATEST_VERSION; version++) {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             try {
@@ -56,8 +61,38 @@ public class Migration {
                     statement.executeUpdate("ALTER TABLE transactions ADD COLUMN transaction_key TEXT");
                     statement.executeUpdate("CREATE UNIQUE INDEX IF NOT EXISTS transactions_transaction_key ON transactions(transaction_key)");
                 }
+                case 8 -> {
+                    statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_ledger (operation_id TEXT NOT NULL, source TEXT NOT NULL, request_hash TEXT NOT NULL, operation_type TEXT NOT NULL, player_uuid TEXT NOT NULL, target_uuid TEXT, currency TEXT NOT NULL, amount INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(operation_id, source))");
+                    statement.executeUpdate("CREATE INDEX IF NOT EXISTS balance_ledger_player ON balance_ledger(player_uuid, created_at)");
+                    statement.executeUpdate("CREATE TABLE IF NOT EXISTS api_shop_operations (operation_id TEXT NOT NULL, source TEXT NOT NULL, request_hash TEXT NOT NULL, operation_type TEXT NOT NULL, status TEXT NOT NULL, shop_id INTEGER, created_at INTEGER NOT NULL, PRIMARY KEY(operation_id, source))");
+                    statement.executeUpdate("CREATE TRIGGER IF NOT EXISTS balances_nonnegative_insert BEFORE INSERT ON balances WHEN NEW.diamond_ore < 0 OR NEW.deepslate_diamond_ore < 0 BEGIN SELECT RAISE(ABORT, 'negative balance'); END");
+                    statement.executeUpdate("CREATE TRIGGER IF NOT EXISTS balances_nonnegative_update BEFORE UPDATE ON balances WHEN NEW.diamond_ore < 0 OR NEW.deepslate_diamond_ore < 0 BEGIN SELECT RAISE(ABORT, 'negative balance'); END");
+                }
+                case 9 -> {
+                    statement.executeUpdate("ALTER TABLE transactions ADD COLUMN item_amount INTEGER NOT NULL DEFAULT 0");
+                    statement.executeUpdate("ALTER TABLE transactions ADD COLUMN delivered_at INTEGER");
+                    statement.executeUpdate("ALTER TABLE transactions ADD COLUMN rolled_back_at INTEGER");
+                    statement.executeUpdate("ALTER TABLE transactions ADD COLUMN seller_diamond_ore INTEGER NOT NULL DEFAULT 0");
+                    statement.executeUpdate("ALTER TABLE transactions ADD COLUMN seller_deepslate_diamond_ore INTEGER NOT NULL DEFAULT 0");
+                    statement.executeUpdate("ALTER TABLE transactions ADD COLUMN adjustments_json TEXT NOT NULL DEFAULT '[]'");
+                    statement.executeUpdate("ALTER TABLE notifications ADD COLUMN transaction_id TEXT");
+                    statement.executeUpdate("CREATE UNIQUE INDEX IF NOT EXISTS notifications_transaction_id ON notifications(transaction_id) WHERE transaction_id IS NOT NULL");
+                    statement.executeUpdate("CREATE INDEX IF NOT EXISTS transactions_recovery_state ON transactions(state, created_at)");
+                }
+                case 10 -> {
+                    statement.executeUpdate("CREATE TABLE IF NOT EXISTS item_recovery (id INTEGER PRIMARY KEY AUTOINCREMENT, transaction_id TEXT NOT NULL UNIQUE, player_uuid TEXT NOT NULL, item_snapshot BLOB NOT NULL, created_at INTEGER NOT NULL, delivered_at INTEGER)");
+                    statement.executeUpdate("CREATE INDEX IF NOT EXISTS item_recovery_player ON item_recovery(player_uuid, delivered_at)");
+                }
                 default -> throw new SQLException("Unknown migration: " + version);
             }
+        }
+    }
+
+    private void backup(Connection connection, Path databaseFile) throws SQLException {
+        String name = databaseFile.getFileName() + ".before-v" + LATEST_VERSION + "-" + System.currentTimeMillis() + ".db";
+        String target = databaseFile.resolveSibling(name).toAbsolutePath().toString().replace("'", "''");
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("VACUUM main INTO '" + target + "'");
         }
     }
 }

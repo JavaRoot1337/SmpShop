@@ -202,16 +202,24 @@ public class ShopCmd implements CommandExecutor {
             msg.send(player, "no-permission");
             return;
         }
+        if (sched.async(() -> reloadAsync(player)) != Sched.ScheduleResult.SCHEDULED) {
+            msg.send(player, "reload-failed");
+        }
+    }
+
+    private void reloadAsync(Player player) {
         try {
             cfg.reload();
             integrations.reloadMessages();
             msg.reload();
-            sounds.reload();
-            integrations.reload(sched);
-            msg.send(player, "reload");
+            sched.entity(player, () -> {
+                sounds.reload();
+                integrations.reload(sched);
+                msg.send(player, "reload");
+            });
         } catch (RuntimeException exception) {
             plugin.getLogger().warning("Не удалось перезагрузить конфигурацию: " + exception.getMessage());
-            msg.send(player, "reload-failed");
+            sched.entity(player, () -> msg.send(player, "reload-failed"));
         }
     }
 

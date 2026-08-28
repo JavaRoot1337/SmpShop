@@ -1,16 +1,16 @@
 # SmpShop
 
-SmpShop добавляет магазины на обычных сундуках. Плагин рассчитан на CanvasMC 26.2 и Folia 26.2, Java 25.
+SmpShop добавляет магазины на обычных сундуках. Один JAR рассчитан на Paper, Folia и Canvas от `1.21.11` до `26.2`.
 
 Краткая инструкция для сервера: [READMERU.md](READMERU.md).
 
-Версия плагина: `1.0`. Имя JAR: `SmpShop-1.0.jar`. Основная команда: `/smpshop`, алиас: `/shop`.
+Версия плагина: `1.1.0`. Имя JAR: `SmpShop-1.1.0.jar`. Основная команда: `/smpshop`, алиас: `/shop`.
 
-Плагин не заявляет поддержку Paper, Spigot или обычного Bukkit. В коде нет NMS, CraftBukkit, reflection и `BukkitScheduler`. Операции с сундуками выполняются в region-контексте, операции с игроком и его инвентарём - в entity-контексте, SQLite и HTTP - асинхронно.
+Официально поддерживаются Paper, Folia и Canvas. Spigot и CraftBukkit без Paper API не поддерживаются. В коде нет NMS, CraftBukkit, reflection и `BukkitScheduler`. Операции с сундуками выполняются в region-контексте, операции с игроком и его инвентарём - в entity-контексте, SQLite и HTTP - асинхронно.
 
 ## Установка
 
-1. Соберите проект или возьмите готовый `SmpShop-1.0.jar`.
+1. Соберите проект или возьмите готовый `SmpShop-1.1.0.jar`.
 2. Положите JAR в папку `plugins` сервера.
 3. Запустите сервер. Плагин создаст `plugins/SmpShop/` и локальную базу `shops.db`.
 4. Откройте созданные `config.yml`, `message.yml` и `message_other.yml` и измените нужные значения.
@@ -22,7 +22,7 @@ SmpShop добавляет магазины на обычных сундуках
 gradlew.bat clean build
 ```
 
-Результат находится в `build/libs/SmpShop-1.0.jar`. Canvas API не включается в JAR. SQLite-драйвер и Gson включаются в JAR, Gson переносится в отдельный пакет.
+Результат находится в `build/libs/SmpShop-1.1.0.jar`. Paper API не включается в JAR. SQLite-драйвер и Gson включаются в JAR, Gson переносится в отдельный пакет.
 
 ## Команды
 
@@ -185,13 +185,13 @@ integrations:
     bot-token: '' #токен телеграм-бота
     poll-interval-seconds: 2 #интервал опроса телеграма
     link-code-timeout-seconds: 300 #срок действия кода телеграма
-    referal-bot: true #отправлять реферальную ссылку вместо копирования кода
+    referral-bot: true #отправлять реферальную ссылку вместо копирования кода
     user-bot: '' #имя телеграм-бота без символа @
   discord:
     enabled: false #включить дискорд через вебхук
 ```
 
-`referal-bot` написан именно так, потому что это имя настройки, используемое плагином.
+Старый ключ `referal-bot` при загрузке переносится в `referral-bot` с сохранением значения.
 
 `storage.sqlite-file` задаёт имя локального файла внутри папки данных плагина. Записи проходят через одну асинхронную последовательную очередь. Периодического flush-таймера нет: изменения отправляются в SQLite сразу, используется WAL и `synchronous=FULL`.
 
@@ -199,7 +199,7 @@ integrations:
 
 ## Сообщения и плейсхолдеры
 
-Игровые сообщения находятся в `plugins/SmpShop/message.yml`. Технические сообщения сервера и ошибки интеграций находятся в `plugins/SmpShop/message_other.yml` и пишутся по-русски без цветовых кодов. Форматы сообщений Telegram и Discord находятся отдельно в `message_tg.yml` и `message_ds.yml`. Значения можно менять без изменения Java-кода.
+Игровые сообщения находятся в `plugins/SmpShop/message.yml`. Технические сообщения сервера и ошибки интеграций находятся в `plugins/SmpShop/message_other.yml` и пишутся по-русски без цветовых кодов. Форматы сообщений Telegram и Discord находятся отдельно в `message_tg.yml` и `message_ds.yml`. Названия предметов для внешних логов задаются в `logger_locate.yml`. Значения можно менять без изменения Java-кода.
 
 Используемые плейсхолдеры `message.yml`:
 
@@ -252,14 +252,14 @@ integrations:
     bot-token: 'токен от BotFather'
     poll-interval-seconds: 2
     link-code-timeout-seconds: 300
-    referal-bot: true
+    referral-bot: true
     user-bot: 'имя_бота_без_@'
 ```
 
 После `/smpshop link tg`:
 
-- при `referal-bot: true` игрок получает кликабельный текст со ссылкой `https://t.me/<user-bot>?start=<код>`;
-- при `referal-bot: false` игрок получает 16-значный код, который можно нажать для копирования `/code <код>`.
+- при `referral-bot: true` игрок получает кликабельный текст со ссылкой `https://t.me/<user-bot>?start=<код>`;
+- при `referral-bot: false` игрок получает 16-значный код, который можно нажать для копирования `/code <код>`.
 
 Бот принимает `/start <код>` и `/code <код>`. Код состоит из 16 цифр, создаётся криптографически случайно, действует ограниченное время и используется один раз. В базе хранится только SHA-256 хеш кода. Привязанный Telegram chat ID хранится в SQLite и не сбрасывается после перезапуска.
 
@@ -270,6 +270,16 @@ sale: "Новая продажа! Магазин %shop%: %item% x%items% за %a
 ```
 
 Внешний файл поддерживает плейсхолдеры `%shop%`, `%item%`, `%items%` и `%amount%`. Тестовые сообщения не используются.
+
+Плейсхолдер `%item%` в Telegram и Discord берёт название из `logger_locate.yml`. Файл использует верхнеуровневые записи `Material ID: "название"`, например:
+
+```yaml
+DIAMOND_SWORD: "Алмазный меч"
+MACE: "Булава"
+TOTEM_OF_UNDYING: "Тотем бессмертия"
+```
+
+Если для предмета нет записи, в внешний лог отправляется его технический ID. Внутриигровые сообщения используют локализацию клиента Minecraft и этот файл не читают.
 
 Если токен пустой, неверный или Telegram временно недоступен, плагин продолжает работу с магазинами. Ошибка интеграции не должна отключать остальные функции.
 
@@ -291,7 +301,7 @@ Webhook хранится в SQLite по UUID игрока и загружает�
 sale: "Новая продажа\nМагазин: %shop%\nТовар: %item% x%items%\nСумма: %amount% АР"
 ```
 
-Используются `%shop%`, `%item%`, `%items%` и `%amount%`. Тестовых сообщений нет. URL webhook является секретом, его нельзя публиковать в Git, чате или документации.
+Используются `%shop%`, `%item%`, `%items%` и `%amount%`. Название в `%item%` берётся из `logger_locate.yml`. Тестовых сообщений нет. URL webhook является секретом, его нельзя публиковать в Git, чате или документации.
 
 ## Права
 
@@ -322,7 +332,7 @@ sale: "Новая продажа\nМагазин: %shop%\nТовар: %item% x%i
 - `notifications` - накопленные офлайн-уведомления о продажах;
 - `transactions` - журнал завершённых DB-частей продаж с ключом операции и составом оплаты.
 
-Миграции идут последовательно: V1 магазины, V2 балансы, V3 notifications, V4 social_links и link_codes, V5 transactions, V6 discord_webhooks, V7 ключ операции и индекс журнала.
+Миграции идут последовательно. Перед обновлением существующей схемы SQLite создаёт согласованную резервную копию. V8-V10 добавляют ledger, идемпотентные API-операции, recovery сделки и возврат предметов.
 
 Физический сундук является источником товарного инвентаря. Плагин не копирует весь сундук в SQLite. Магазины загружаются в runtime-индекс по UUID мира и каноническим координатам.
 
@@ -337,7 +347,43 @@ sale: "Новая продажа\nМагазин: %shop%\nТовар: %item% x%i
 
 При выключении новые действия прекращаются, сессии покупателей закрываются, остаток оплаты возвращается или начисляется в базу, Telegram останавливается, очередь SQLite завершается, а runtime-состояние очищается.
 
-`/smpshop reload` не пересоздаёт активные сессии. Он перечитывает `message.yml`, `message_other.yml`, `config.yml`, `message_tg.yml`, `message_ds.yml` и перезапускает Telegram polling с новыми настройками. Для обновления самого JAR нужен перезапуск сервера.
+`/smpshop reload` не пересоздаёт активные сессии. Он перечитывает `message.yml`, `message_other.yml`, `config.yml`, `message_tg.yml`, `message_ds.yml`, `logger_locate.yml` и перезапускает Telegram polling с новыми настройками. Для обновления самого JAR нужен перезапуск сервера.
+
+## Публичный API v1
+
+API входит в основной JAR. Для компиляции подключите `SmpShop-1.1.0.jar` как `compileOnly`, а в `plugin.yml` consumer-плагина укажите `depend: [SmpShop]` или `softdepend: [SmpShop]`.
+
+```java
+SmpShopApi api = Bukkit.getServicesManager().load(SmpShopApi.class);
+if (api == null) {
+    return;
+}
+
+api.changeBalance(new BalanceChange(
+        UUID.randomUUID(),
+        new NamespacedKey(plugin, "reward"),
+        playerId,
+        CurrencyType.DIAMOND_ORE,
+        5
+));
+```
+
+`SmpShopApi.VERSION` равен `1`. API можно вызывать с любого потока. SQL, region/entity scheduling и открытие GUI выполняются внутри SmpShop; completion thread у `CompletionStage` не фиксирован. Проверки permissions остаются обязанностью consumer-плагина. Каждый mutation-запрос принимает `operationId` и `source`; повтор с теми же данными не применяет операцию второй раз.
+
+Комиссия задаётся в синхронном `ShopPurchasePrepareEvent`. Имена корректировок должны быть уникальны в пределах сделки.
+
+```java
+@EventHandler
+public void onPurchase(ShopPurchasePrepareEvent event) {
+    event.addAdjustment(
+            new NamespacedKey(plugin, "bank-fee"),
+            AdjustmentType.SELLER_DEDUCTION,
+            new CurrencyAmounts(1, 0)
+    );
+}
+```
+
+После commit вызывается async `ShopPurchaseCompletedEvent`. В нём доступны `transactionId`, исходная цена, фактическая оплата покупателя, выплата продавцу и список корректировок. Полный consumer находится в `src/testConsumer` и собирается в `build/libs/SmpShopApiConsumer-1.1.0.jar`.
 
 ## Ограничения текущей версии
 
@@ -346,15 +392,15 @@ sale: "Новая продажа\nМагазин: %shop%\nТовар: %item% x%i
 - Один магазин может быть занят только одной покупательской сессией.
 - Содержимое магазина не восстанавливается из SQLite после уничтожения файла мира.
 - Офлайн-продавцу начисляется баланс в SQLite, а при включённых настройках также сохраняется объединяемое уведомление о продажах.
-- `transactions` фиксирует атомарную DB-часть продажи, но не заменяет физический сундук и не является отдельной копией товара. Полное восстановление физической сделки после аварии требует отдельного recovery-протокола.
+- Карточки `/smpshop list` информационные; удалённое открытие физического сундука отключено.
 - Вебхук и Telegram token нужно хранить только в локальном конфиге сервера.
 
 ## Проверка перед установкой на сервер
 
 Проверьте:
 
-1. Сервер запускается на CanvasMC или Folia 26.2 и Java 25.
-2. В JAR есть `plugin.yml`, `config.yml`, `message.yml`, `message_other.yml`, `message_tg.yml` и `message_ds.yml`.
+1. Paper или Folia `1.21.11` запускается на Java 21; Paper, Folia или Canvas `26.1+` запускается на Java 25.
+2. В JAR есть `plugin.yml`, `config.yml`, `message.yml`, `message_other.yml`, `message_tg.yml`, `message_ds.yml` и `logger_locate.yml`.
 3. После запуска появляется `plugins/SmpShop/shops.db`.
 4. `/smpshop help` и команды с неверными аргументами показывают помощь.
 5. Создание одиночного и двойного сундука работает, конфликтная координата блокируется.

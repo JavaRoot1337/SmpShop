@@ -1,6 +1,7 @@
 package ru.javaroot.config;
 
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -10,29 +11,31 @@ import java.util.List;
 public class Cfg {
     private final JavaPlugin plugin;
     private final OtherMsg other;
-    private FileConfiguration cfg;
+    private volatile FileConfiguration cfg;
 
     public Cfg(JavaPlugin plugin, OtherMsg other) {
         this.plugin = plugin;
         this.other = other;
         this.cfg = plugin.getConfig();
-        validate();
-        migrate();
-        validate();
+        validate(cfg);
+        migrate(cfg, true);
+        validate(cfg);
     }
 
-    public void reload() {
-        FileConfiguration previous = cfg;
-        plugin.reloadConfig();
-        cfg = plugin.getConfig();
-        try {
-            validate();
-            migrate();
-            validate();
-        } catch (RuntimeException exception) {
-            cfg = previous;
-            throw exception;
+    public synchronized void reload() {
+        File file = new File(plugin.getDataFolder(), "config.yml");
+        YamlConfiguration candidate = YamlConfiguration.loadConfiguration(file);
+        validate(candidate);
+        boolean changed = migrate(candidate, false);
+        validate(candidate);
+        if (changed) {
+            try {
+                candidate.save(file);
+            } catch (IOException exception) {
+                throw new IllegalStateException(other.raw("config-invalid-value"), exception);
+            }
         }
+        cfg = candidate;
     }
 
     public int minPrice() {
@@ -84,7 +87,7 @@ public class Cfg {
     }
 
     public boolean telegramReferralBot() {
-        return cfg.getBoolean("integrations.telegram.referal-bot");
+        return cfg.getBoolean("integrations.telegram.referral-bot");
     }
 
     public String telegramUserBot() {
@@ -94,6 +97,18 @@ public class Cfg {
 
     public boolean discordEnabled() {
         return cfg.getBoolean("integrations.discord.enabled");
+    }
+
+    public int httpMaxConcurrent() {
+        return cfg.getInt("integrations.http.max-concurrent");
+    }
+
+    public int httpConnectTimeoutSeconds() {
+        return cfg.getInt("integrations.http.connect-timeout-seconds");
+    }
+
+    public int httpResponseLimitBytes() {
+        return cfg.getInt("integrations.http.response-limit-bytes");
     }
 
     public boolean sellerSaleSoundEnabled() {
@@ -136,20 +151,33 @@ public class Cfg {
         return cfg.getBoolean("notifications.join-message-enabled");
     }
 
-    private void validate() {
-        if (minPrice() < 1 || maxPrice() < minPrice()) {
+    private void validate(FileConfiguration candidate) {
+        int minPrice = candidate.getInt("shop.min-price");
+        int maxPrice = candidate.getInt("shop.max-price");
+        if (minPrice < 1 || maxPrice < minPrice) {
             throw new IllegalStateException(other.raw("config-invalid-price-range"));
         }
-        if (regularShopLimit() < 1 || plusShopLimit() < regularShopLimit()
-                || placementTimeoutSeconds() < 1 || transactionTimeoutSeconds() < 1
-                || telegramPollIntervalSeconds() < 1 || telegramCodeTimeoutSeconds() < 1
-                || !validVolume(sellerSaleVolume()) || !validVolume(buyerPurchaseVolume())
-                || !validPitch(sellerSalePitch()) || !validPitch(buyerPurchasePitch())) {
+        int regularLimit = candidate.getInt("shop.max-per-player");
+        if (regularLimit < 1 || candidate.getInt("shop.plus-max-per-player") < regularLimit
+                || candidate.getInt("shop.pending-placement-timeout-seconds") < 1
+                || candidate.getInt("storage.transaction-timeout-seconds") < 1
+                || candidate.getInt("integrations.telegram.poll-interval-seconds") < 1
+                || candidate.getInt("integrations.telegram.link-code-timeout-seconds") < 1
+                || candidate.getInt("integrations.http.max-concurrent") < 1
+                || candidate.getInt("integrations.http.max-concurrent") > 64
+                || candidate.getInt("integrations.http.connect-timeout-seconds") < 1
+                || candidate.getInt("integrations.http.connect-timeout-seconds") > 120
+                || candidate.getInt("integrations.http.response-limit-bytes") < 1024
+                || candidate.getInt("integrations.http.response-limit-bytes") > 16 * 1024 * 1024
+                || !validVolume((float) candidate.getDouble("sounds.seller-sale.volume"))
+                || !validVolume((float) candidate.getDouble("sounds.buyer-purchase.volume"))
+                || !validPitch((float) candidate.getDouble("sounds.seller-sale.pitch"))
+                || !validPitch((float) candidate.getDouble("sounds.buyer-purchase.pitch"))) {
             throw new IllegalStateException(other.raw("config-invalid-value"));
         }
-        validateSqlitePath();
-        List<Integer> sizes = cfg.getIntegerList("shop.allowed-menu-sizes");
-        int menuSize = cfg.getInt("shop.menu-size");
+        validateSqlitePath(candidate);
+        List<Integer> sizes = candidate.getIntegerList("shop.allowed-menu-sizes");
+        int menuSize = candidate.getInt("shop.menu-size");
         if (!sizes.contains(menuSize) || menuSize % 9 != 0 || menuSize < 9 || menuSize > 54) {
             throw new IllegalStateException(other.raw("config-invalid-menu-size"));
         }
@@ -163,8 +191,8 @@ public class Cfg {
         return Float.isFinite(value) && value > 0 && value <= 2;
     }
 
-    private void validateSqlitePath() {
-        String fileName = sqliteFile();
+    private void validateSqlitePath(FileConfiguration candidate) {
+        String fileName = candidate.getString("storage.sqlite-file");
         if (fileName == null || fileName.isBlank()) {
             throw new IllegalStateException(other.raw("config-invalid-value"));
         }
@@ -179,36 +207,39 @@ public class Cfg {
         }
     }
 
-    private void migrate() {
+    private boolean migrate(FileConfiguration candidate, boolean pluginConfig) {
         boolean changed = false;
-        changed |= remove("shop.default-price");
-        changed |= remove("shop.buyer-lock-timeout-seconds");
-        if (!cfg.contains("integrations.telegram.referal-bot")) {
-            cfg.set("integrations.telegram.referal-bot", true);
+        changed |= remove(candidate, "shop.default-price");
+        changed |= remove(candidate, "shop.buyer-lock-timeout-seconds");
+        if (!candidate.isSet("integrations.telegram.referral-bot")
+                && candidate.isSet("integrations.telegram.referal-bot")) {
+            candidate.set("integrations.telegram.referral-bot",
+                    candidate.getBoolean("integrations.telegram.referal-bot"));
             changed = true;
         }
-        if (!cfg.contains("integrations.telegram.user-bot")) {
-            cfg.set("integrations.telegram.user-bot", "");
+        if (candidate.isSet("integrations.telegram.referal-bot")) {
+            candidate.set("integrations.telegram.referal-bot", null);
             changed = true;
         }
-        if (cfg.contains("integrations.discord.sales-webhook-url")) {
-            cfg.set("integrations.discord.sales-webhook-url", null);
+        if (candidate.contains("integrations.discord.sales-webhook-url")) {
+            candidate.set("integrations.discord.sales-webhook-url", null);
             changed = true;
         }
-        if (cfg.contains("storage.flush-interval-seconds")) {
-            cfg.set("storage.flush-interval-seconds", null);
+        if (candidate.contains("storage.flush-interval-seconds")) {
+            candidate.set("storage.flush-interval-seconds", null);
             changed = true;
         }
-        if (changed) {
+        if (changed && pluginConfig) {
             plugin.saveConfig();
         }
+        return changed;
     }
 
-    private boolean remove(String path) {
-        if (!cfg.contains(path)) {
+    private boolean remove(FileConfiguration candidate, String path) {
+        if (!candidate.contains(path)) {
             return false;
         }
-        cfg.set(path, null);
+        candidate.set(path, null);
         return true;
     }
 }

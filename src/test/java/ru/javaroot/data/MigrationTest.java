@@ -13,19 +13,19 @@ class MigrationTest {
     @Test
     void appliesAllVersionsAndCanRunAgain() throws Exception {
         try (var connection = DriverManager.getConnection("jdbc:sqlite::memory:")) {
-            new Migration().apply(connection);
-            new Migration().apply(connection);
+            new Migration().apply(connection, java.nio.file.Path.of("memory.db"));
+            new Migration().apply(connection, java.nio.file.Path.of("memory.db"));
 
             try (Statement statement = connection.createStatement();
                  ResultSet result = statement.executeQuery("SELECT COUNT(*) FROM schema_migrations")) {
                 result.next();
-                assertEquals(7, result.getInt(1));
+                assertEquals(10, result.getInt(1));
             }
             try (Statement statement = connection.createStatement();
                  ResultSet result = statement.executeQuery("PRAGMA table_info(transactions)")) {
                 boolean found = false;
                 while (result.next()) {
-                    if ("transaction_key".equals(result.getString("name"))) {
+                    if ("item_snapshot".equals(result.getString("name"))) {
                         found = true;
                         break;
                     }

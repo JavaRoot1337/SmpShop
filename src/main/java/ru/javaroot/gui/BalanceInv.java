@@ -30,6 +30,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 
 public class BalanceInv implements Listener {
     private static final int GUI_SIZE = 54;
@@ -43,6 +44,7 @@ public class BalanceInv implements Listener {
     private final Sched sched;
     private final Msg msg;
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
+    private final Set<UUID> closing = ConcurrentHashMap.newKeySet();
 
     public BalanceInv(JavaPlugin plugin, BalanceStore balances, Sched sched, Msg msg) {
         this.plugin = plugin;
@@ -57,7 +59,7 @@ public class BalanceInv implements Listener {
             if (!player.isOnline() || sessions.containsKey(playerId)) {
                 return;
             }
-            Session session = new Session(playerId, balance, itemPages(balance));
+            Session session = new Session(playerId, balance);
             session.inventory = Bukkit.createInventory(null, GUI_SIZE, msg.component("balance-title"));
             sessions.put(playerId, session);
             showPage(session);
@@ -95,6 +97,10 @@ public class BalanceInv implements Listener {
         if (rawSlot >= 0 && rawSlot < GUI_SIZE && rawSlot >= BALANCE_SLOTS) {
             return;
         }
+        if (event.getClick() == ClickType.SHIFT_LEFT || event.getClick() == ClickType.SHIFT_RIGHT) {
+            moveShift(player, session, event);
+            return;
+        }
         if (allowedClick(event)) {
             event.setCancelled(false);
         }
@@ -126,6 +132,7 @@ public class BalanceInv implements Listener {
         }
         Session session = session(player, event.getView().getTopInventory());
         if (session != null && sessions.remove(player.getUniqueId(), session)) {
+            closing.add(session.playerId);
             capture(session);
             close(player, session);
         }
@@ -136,6 +143,7 @@ public class BalanceInv implements Listener {
         UUID playerId = event.getPlayer().getUniqueId();
         Session session = sessions.remove(playerId);
         if (session != null) {
+            closing.add(session.playerId);
             capture(session);
             close(event.getPlayer(), session);
         }
@@ -149,10 +157,11 @@ public class BalanceInv implements Listener {
             if (!sessions.remove(playerId, session)) {
                 continue;
             }
+            closing.add(playerId);
 
             Player player = Bukkit.getPlayer(playerId);
             if (player == null || !player.isOnline()) {
-                closings.add(settle(session, null));
+                closings.add(settleAndUnlock(session, null));
                 continue;
             }
 
@@ -163,10 +172,14 @@ public class BalanceInv implements Listener {
                 if (player.getOpenInventory().getTopInventory() == session.inventory) {
                     player.closeInventory();
                 }
-                settle(session, player).whenComplete((ignored, error) -> complete(closing, error));
-            }, () -> settle(session, null).whenComplete((ignored, error) -> complete(closing, error)));
+                settleAndUnlock(session, player).whenComplete((ignored, error) -> complete(closing, error));
+            }, () -> settleAndUnlock(session, null).whenComplete((ignored, error) -> complete(closing, error)));
         }
         return CompletableFuture.allOf(closings.toArray(CompletableFuture[]::new));
+    }
+
+    public boolean isOpen(UUID playerId) {
+        return sessions.containsKey(playerId) || closing.contains(playerId);
     }
 
     static List<OreStack[]> pack(Balance balance) {
@@ -190,21 +203,6 @@ public class BalanceInv implements Listener {
         return pages;
     }
 
-    private static List<ItemStack[]> itemPages(Balance balance) {
-        List<ItemStack[]> pages = new ArrayList<>();
-        for (OreStack[] page : pack(balance)) {
-            ItemStack[] items = new ItemStack[BALANCE_SLOTS];
-            for (int slot = 0; slot < BALANCE_SLOTS; slot++) {
-                OreStack stack = page[slot];
-                if (stack != null) {
-                    items[slot] = new ItemStack(stack.currency().material(), stack.amount());
-                }
-            }
-            pages.add(items);
-        }
-        return pages;
-    }
-
     private void previous(Session session) {
         capture(session);
         if (session.page == 0) {
@@ -216,7 +214,7 @@ public class BalanceInv implements Listener {
 
     private void next(Session session) {
         capture(session);
-        if (session.page + 1 < session.pages.size()) {
+        if (session.page < session.lastOriginalPage) {
             session.page++;
             showPage(session);
             return;
@@ -224,14 +222,14 @@ public class BalanceInv implements Listener {
         if (!full(session.pages.get(session.page))) {
             return;
         }
-        session.pages.add(new ItemStack[BALANCE_SLOTS]);
         session.page++;
         showPage(session);
     }
 
     private void showPage(Session session) {
         ItemStack[] contents = new ItemStack[GUI_SIZE];
-        ItemStack[] page = session.pages.get(session.page);
+        ItemStack[] page = session.pages.computeIfAbsent(session.page,
+                pageNumber -> itemPage(session.original, pageNumber));
         for (int slot = 0; slot < BALANCE_SLOTS; slot++) {
             contents[slot] = copy(page[slot]);
         }
@@ -241,7 +239,8 @@ public class BalanceInv implements Listener {
     }
 
     private void capture(Session session) {
-        ItemStack[] page = session.pages.get(session.page);
+        ItemStack[] page = session.pages.computeIfAbsent(session.page,
+                pageNumber -> itemPage(session.original, pageNumber));
         for (int slot = 0; slot < BALANCE_SLOTS; slot++) {
             page[slot] = copy(session.inventory.getItem(slot));
         }
@@ -249,30 +248,26 @@ public class BalanceInv implements Listener {
 
     private void close(Player player, Session session) {
         sched.entity(player, () -> {
-            settle(session, player).whenComplete((ignored, error) -> logIfFailed("Не удалось сохранить баланс", error));
-        }, () -> settle(session, null).whenComplete((ignored, error) -> logIfFailed("Не удалось сохранить баланс", error)));
+            settleAndUnlock(session, player).whenComplete((ignored, error) -> logIfFailed("Не удалось сохранить баланс", error));
+        }, () -> settleAndUnlock(session, null).whenComplete((ignored, error) -> logIfFailed("Не удалось сохранить баланс", error)));
+    }
+
+    private CompletableFuture<Void> settleAndUnlock(Session session, Player player) {
+        return settle(session, player).whenComplete((ignored, error) -> closing.remove(session.playerId));
     }
 
     private CompletableFuture<Void> settle(Session session, Player player) {
-        EnumMap<Currency, Long> current = count(session.pages);
-        List<ItemStack> invalid = invalidItems(session.pages);
+        EnumMap<Currency, Long> current = changedBalance(session);
+        List<ItemStack> invalid = invalidItems(session.pages.values());
         returnItems(player, invalid);
 
-        List<CompletableFuture<Void>> operations = new ArrayList<>();
-        for (Currency currency : Currency.values()) {
-            long difference = current.getOrDefault(currency, 0L) - amount(session.original, currency);
-            if (difference > 0) {
-                operations.add(balances.deposit(session.playerId, currency, difference));
-            } else if (difference < 0) {
-                operations.add(takeOrRestore(session.playerId, currency, -difference));
-            }
-        }
-        return CompletableFuture.allOf(operations.toArray(CompletableFuture[]::new));
-    }
-
-    private CompletableFuture<Void> takeOrRestore(UUID playerId, Currency currency, long amount) {
-        return balances.take(playerId, currency, amount)
-                .thenCompose(taken -> taken ? CompletableFuture.completedFuture(null) : balances.deposit(playerId, currency, amount));
+        long diamondDelta = current.getOrDefault(Currency.DIAMOND_ORE, 0L) - session.original.diamondOre();
+        long deepslateDelta = current.getOrDefault(Currency.DEEPSLATE_DIAMOND_ORE, 0L)
+                - session.original.deepslateDiamondOre();
+        return balances.settle(session.operationId, session.playerId, diamondDelta, deepslateDelta)
+                .thenCompose(result -> result.status() == BalanceStore.MutationStatus.SUCCESS
+                        ? CompletableFuture.completedFuture(null)
+                        : CompletableFuture.failedFuture(new IllegalStateException("Balance changed during GUI session")));
     }
 
     private void returnItems(Player player, List<ItemStack> items) {
@@ -300,8 +295,7 @@ public class BalanceInv implements Listener {
 
     private boolean allowedClick(InventoryClickEvent event) {
         ClickType click = event.getClick();
-        if (click != ClickType.LEFT && click != ClickType.RIGHT
-                && click != ClickType.SHIFT_LEFT && click != ClickType.SHIFT_RIGHT) {
+        if (click != ClickType.LEFT && click != ClickType.RIGHT) {
             return false;
         }
         return allowedItem(event.getCurrentItem()) && allowedItem(event.getCursor());
@@ -312,6 +306,43 @@ public class BalanceInv implements Listener {
         return (click == ClickType.LEFT || click == ClickType.RIGHT) && allowedItem(event.getCursor());
     }
 
+    private void moveShift(Player player, Session session, InventoryClickEvent event) {
+        ItemStack item = event.getCurrentItem();
+        if (!isCurrency(item)) {
+            return;
+        }
+        if (event.getRawSlot() < GUI_SIZE) {
+            Map<Integer, ItemStack> overflow = player.getInventory().addItem(item.clone());
+            session.inventory.setItem(event.getRawSlot(), overflow.values().stream().findFirst().orElse(null));
+            return;
+        }
+        int remaining = item.getAmount();
+        for (int slot = 0; slot < BALANCE_SLOTS && remaining > 0; slot++) {
+            ItemStack target = session.inventory.getItem(slot);
+            if (target != null && target.isSimilar(item)) {
+                int moved = Math.min(remaining, target.getMaxStackSize() - target.getAmount());
+                target.setAmount(target.getAmount() + moved);
+                remaining -= moved;
+            }
+        }
+        for (int slot = 0; slot < BALANCE_SLOTS && remaining > 0; slot++) {
+            if (session.inventory.getItem(slot) != null) {
+                continue;
+            }
+            int moved = Math.min(remaining, item.getMaxStackSize());
+            ItemStack placed = item.clone();
+            placed.setAmount(moved);
+            session.inventory.setItem(slot, placed);
+            remaining -= moved;
+        }
+        if (remaining == 0) {
+            event.getClickedInventory().setItem(event.getSlot(), null);
+        } else {
+            item.setAmount(remaining);
+            event.getClickedInventory().setItem(event.getSlot(), item);
+        }
+    }
+
     private boolean allowedItem(ItemStack item) {
         return item == null || item.getType().isAir() || isCurrency(item);
     }
@@ -320,7 +351,7 @@ public class BalanceInv implements Listener {
         return item != null && Currency.from(item.getType()) != null;
     }
 
-    private EnumMap<Currency, Long> count(List<ItemStack[]> pages) {
+    private EnumMap<Currency, Long> count(Iterable<ItemStack[]> pages) {
         EnumMap<Currency, Long> amounts = new EnumMap<>(Currency.class);
         for (ItemStack[] page : pages) {
             for (ItemStack item : page) {
@@ -333,7 +364,7 @@ public class BalanceInv implements Listener {
         return amounts;
     }
 
-    private List<ItemStack> invalidItems(List<ItemStack[]> pages) {
+    private List<ItemStack> invalidItems(Iterable<ItemStack[]> pages) {
         List<ItemStack> invalid = new ArrayList<>();
         for (ItemStack[] page : pages) {
             for (ItemStack item : page) {
@@ -356,6 +387,54 @@ public class BalanceInv implements Listener {
 
     private static long amount(Balance balance, Currency currency) {
         return currency == Currency.DIAMOND_ORE ? balance.diamondOre() : balance.deepslateDiamondOre();
+    }
+
+    private EnumMap<Currency, Long> changedBalance(Session session) {
+        EnumMap<Currency, Long> current = new EnumMap<>(Currency.class);
+        for (Currency currency : Currency.values()) {
+            current.put(currency, amount(session.original, currency));
+        }
+        for (Map.Entry<Long, ItemStack[]> entry : session.pages.entrySet()) {
+            ItemStack[] originalPage = itemPage(session.original, entry.getKey());
+            EnumMap<Currency, Long> before = count(java.util.Collections.singletonList(originalPage));
+            EnumMap<Currency, Long> after = count(java.util.Collections.singletonList(entry.getValue()));
+            for (Currency currency : Currency.values()) {
+                long value = Math.subtractExact(current.get(currency), before.getOrDefault(currency, 0L));
+                current.put(currency, Math.addExact(value, after.getOrDefault(currency, 0L)));
+            }
+        }
+        return current;
+    }
+
+    private static ItemStack[] itemPage(Balance balance, long page) {
+        ItemStack[] items = new ItemStack[BALANCE_SLOTS];
+        long firstStack = Math.multiplyExact(page, BALANCE_SLOTS);
+        long diamondStacks = stackCount(balance.diamondOre());
+        long deepslateStacks = stackCount(balance.deepslateDiamondOre());
+        for (int slot = 0; slot < BALANCE_SLOTS; slot++) {
+            long stack = firstStack + slot;
+            if (stack < diamondStacks) {
+                items[slot] = stack(balance.diamondOre(), stack, Currency.DIAMOND_ORE);
+            } else if (stack - diamondStacks < deepslateStacks) {
+                items[slot] = stack(balance.deepslateDiamondOre(), stack - diamondStacks,
+                        Currency.DEEPSLATE_DIAMOND_ORE);
+            }
+        }
+        return items;
+    }
+
+    private static ItemStack stack(long amount, long index, Currency currency) {
+        long remaining = amount - index * MAX_STACK_SIZE;
+        return new ItemStack(currency.material(), (int) Math.min(MAX_STACK_SIZE, remaining));
+    }
+
+    private static long pageCount(Balance balance) {
+        long stacks = Math.addExact(stackCount(balance.diamondOre()), stackCount(balance.deepslateDiamondOre()));
+        return stacks == 0 ? 1 : (stacks - 1) / BALANCE_SLOTS + 1;
+    }
+
+    private static long stackCount(long amount) {
+        return amount == 0 ? 0 : (amount - 1) / MAX_STACK_SIZE + 1;
     }
 
     private static ItemStack copy(ItemStack item) {
@@ -383,15 +462,17 @@ public class BalanceInv implements Listener {
 
     private static class Session {
         private final UUID playerId;
+        private final UUID operationId = UUID.randomUUID();
         private final Balance original;
-        private final List<ItemStack[]> pages;
-        private int page;
+        private final Map<Long, ItemStack[]> pages = new ConcurrentHashMap<>();
+        private final long lastOriginalPage;
+        private long page;
         private Inventory inventory;
 
-        private Session(UUID playerId, Balance original, List<ItemStack[]> pages) {
+        private Session(UUID playerId, Balance original) {
             this.playerId = playerId;
             this.original = original;
-            this.pages = pages;
+            this.lastOriginalPage = pageCount(original) - 1;
         }
     }
 
