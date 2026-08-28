@@ -26,7 +26,7 @@ sounds:
     pitch: 1.0 #тон звука покупки
 
 notifications:
-  offline-enabled: true #сохранять уведомления для офлайн-продавца
+  offline-enabled: true #сохранять уведомления для продавца не в сети
   join-message-enabled: true #показывать уведомление при входе продавца
 
 integrations:
@@ -35,11 +35,11 @@ integrations:
     connect-timeout-seconds: 10
     response-limit-bytes: 1048576
   telegram:
-    enabled: false #включить телеграм
-    bot-token: '' #токен телеграм-бота
-    poll-interval-seconds: 2 #интервал запроса на телеграм бота
-    link-code-timeout-seconds: 300 #срок действия кода телеграма
-    referral-bot: true #отправлять реферальную ссылку вместо копирования кода
-    user-bot: '' #имя телеграм-бота без символа @
+    enabled: false #включить уведомления в Телеграме
+    bot-token: '' #токен Телеграм-бота
+    poll-interval-seconds: 2 #интервал запроса к Телеграм-боту
+    link-code-timeout-seconds: 300 #срок действия кода Телеграма
+    referral-bot: true #отправлять ссылку на бота вместо копирования кода
+    user-bot: '' #имя Телеграм-бота без символа @
   discord:
-    enabled: false #включить дискорд через вебхук
+    enabled: false #включить уведомления через вебхук Дискорда

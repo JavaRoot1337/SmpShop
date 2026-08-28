@@ -4,4 +4,4 @@ main: ru.javaroot.consumer.ApiConsumer
 api-version: '1.21.11'
 folia-supported: true
 depend: [SmpShop]
-description: проверка публичного API SmpShop
+description: проверка публичного интерфейса SmpShop

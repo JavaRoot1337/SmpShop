@@ -1,4 +1,4 @@
-#для замены цветовой темы можно использовать notepad++ ctrl + f найти и заменить &b на &(желаемый цвет, поддержка hex &#FFFFFF)
+#для замены цвета используйте поиск и замену: &b на нужный цвет, включая &#FFFFFF
 loading: '&7Плагин ещё загружает базу данных'
 no-player: '&cКоманда доступна только игроку'
 no-permission: '&cУ вас нет прав на это действие'
@@ -9,9 +9,9 @@ help: |
   &b/smpshop delete &8- &7удалить свой магазин
   &b/smpshop remove &8- &7удалить любой магазин
   &b/smpshop list [игрок] &8- &7показать магазины
-  &b/smpshop link tg &8- &7получить ссылку привязки телеграм
-  &b/smpshop link ds webhook <url> &8- &7сохранить вебхук дискорда
-  &b/smpshop link max &8- &7подвязать бота макс
+  &b/smpshop link tg &8- &7получить ссылку привязки Телеграма
+  &b/smpshop link ds webhook <url> &8- &7сохранить вебхук Дискорда
+  &b/smpshop link max &8- &7подвязать бота Макс
   &b/smpshop reload &8- &7перезагрузить настройки
 price-invalid: '&cЦена должна быть целым числом'
 price-range: '&cЦена должна быть от &b%min% &cдо &b%max%'
@@ -27,13 +27,13 @@ shop-not-owner: '&cЭто не ваш магазин'
 reload: '&7Настройки и сообщения перезагружены'
 reload-failed: '&cНе удалось перезагрузить настройки. Проверьте конфигурацию.'
 link-max: '&cКакой нахуй макс! В дискордике с мужиками сиди.'
-link-code-prefix: '&7Ваш код для телеграм: &b'
+link-code-prefix: '&7Ваш код для Телеграма: &b'
 link-code-suffix: ' &7(клик)'
 integration-disabled: '&cЭта интеграция отключена или не настроена'
-discord-webhook-saved: '&7Вебхук дискорда сохранён для ваших магазинов'
-discord-webhook-invalid: '&cУкажите корректный Discord webhook: &7/smpshop link ds webhook <url>'
-telegram-referral-not-configured: '&cРеферальный бот не настроен: укажите integrations.telegram.user-bot'
-telegram-referral-prefix: '&7Откройте реферальную ссылку Telegram: &b'
+discord-webhook-saved: '&7Вебхук Дискорда сохранён для ваших магазинов'
+discord-webhook-invalid: '&cУкажите правильный вебхук Дискорда: &7/smpshop link ds webhook <url>'
+telegram-referral-not-configured: '&cСсылка на Телеграм не настроена: укажите integrations.telegram.user-bot'
+telegram-referral-prefix: '&7Откройте ссылку для привязки Телеграма: &b'
 telegram-referral-suffix: ' &7(нажмите на ссылку)'
 balance-title: '&8Баланс руды'
 balance-previous: '&fНазад'
