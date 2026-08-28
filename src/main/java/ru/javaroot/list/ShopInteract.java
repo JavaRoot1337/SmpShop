@@ -1,6 +1,5 @@
 package ru.javaroot.list;
 
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Chest;
@@ -120,34 +119,21 @@ public class ShopInteract implements Listener {
 
     private void delete(Player player, Shop shop) {
         command.clearAction(player.getUniqueId());
-        if (trade.isBusy(shop.id())) {
+        if (!trade.reserveRemoval(shop.id())) {
             msg.send(player, "shop-busy");
             return;
         }
-        org.bukkit.World world = Bukkit.getWorld(shop.worldId());
-        if (world == null) {
-            store.delete(shop.id()).thenRun(() -> {
+        store.delete(shop.id())
+                .thenRun(() -> {
                 shops.remove(shop);
                 sched.entity(player, () -> msg.send(player, "shop-deleted"));
-            }).exceptionally(error -> {
-                plugin.getLogger().warning("Не удалось удалить магазин: " + error.getMessage());
-                return null;
-            });
-            return;
-        }
-        Location location = new Location(world, shop.x1(), shop.y1(), shop.z1());
-        store.delete(shop.id()).thenRun(() -> sched.region(location, () -> {
-            if (location.getBlock().getType() != Material.CHEST) {
-                shops.remove(shop);
-                sched.entity(player, () -> msg.send(player, "shop-deleted"));
-                return;
-            }
-            shops.remove(shop);
-            sched.entity(player, () -> msg.send(player, "shop-deleted"));
-        })).exceptionally(error -> {
-            plugin.getLogger().warning("Не удалось удалить магазин: " + error.getMessage());
-            return null;
-        });
+                })
+                .whenComplete((ignored, error) -> {
+                    trade.releaseRemoval(shop.id());
+                    if (error != null) {
+                        plugin.getLogger().warning("Не удалось удалить магазин: " + error.getMessage());
+                    }
+                });
     }
 
     private List<Location> chestLocations(Location location) {

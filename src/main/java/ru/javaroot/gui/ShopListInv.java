@@ -138,7 +138,10 @@ public class ShopListInv implements Listener {
             return result;
         }
         Location location = new Location(world, shop.x1(), shop.y1(), shop.z1());
-        sched.region(location, () -> result.complete(createIcon(shop, location)));
+        if (sched.region(location, () -> result.complete(createIcon(shop, location)))
+                != Sched.ScheduleResult.SCHEDULED) {
+            result.complete(new ItemStack(Material.BARRIER));
+        }
         return result;
     }
 

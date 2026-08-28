@@ -1,6 +1,7 @@
 package ru.javaroot.list;
 
 import org.bukkit.Bukkit;
+import org.bukkit.NamespacedKey;
 import org.bukkit.block.Chest;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Player;
@@ -13,11 +14,16 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.plugin.java.JavaPlugin;
 import ru.javaroot.config.Msg;
 import ru.javaroot.api.CurrencyAmounts;
 import ru.javaroot.api.ShopPosition;
@@ -68,9 +74,11 @@ public class ShopTrade implements Listener {
     private final Map<UUID, EnumMap<Currency, Long>> pendingReturns = new ConcurrentHashMap<>();
     private final Set<Long> lockedShops = ConcurrentHashMap.newKeySet();
     private final Gson gson = new Gson();
+    private final NamespacedKey deliveryKey;
     private volatile boolean accepting;
 
-    public ShopTrade(ShopMgr shops, ShopStore shopStore, BalanceStore balances, IntegrationHub integrations,
+    public ShopTrade(JavaPlugin plugin, ShopMgr shops, ShopStore shopStore, BalanceStore balances,
+                     IntegrationHub integrations,
                      NotifySvc notifications, SoundSvc sounds, Msg msg, ItemName itemNames, Sched sched,
                      Logger logger) {
         this.shops = shops;
@@ -83,6 +91,7 @@ public class ShopTrade implements Listener {
         this.itemNames = itemNames;
         this.sched = sched;
         this.logger = logger;
+        this.deliveryKey = new NamespacedKey(plugin, "delivery-transaction");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -143,6 +152,10 @@ public class ShopTrade implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
+        if (deliveryItem(event.getCurrentItem()) || deliveryItem(event.getCursor())) {
+            event.setCancelled(true);
+            return;
+        }
         Session session = sessions.get(player.getUniqueId());
         if (session == null || event.getView().getTopInventory() != session.inventory) {
             return;
@@ -182,6 +195,10 @@ public class ShopTrade implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDrag(InventoryDragEvent event) {
         if (event.getWhoClicked() instanceof Player player) {
+            if (deliveryItem(event.getOldCursor())) {
+                event.setCancelled(true);
+                return;
+            }
             Session session = sessions.get(player.getUniqueId());
             if (session != null && event.getView().getTopInventory() == session.inventory) {
                 event.setCancelled(true);
@@ -192,6 +209,27 @@ public class ShopTrade implements Listener {
                     event.setCancelled(false);
                 }
             }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onDrop(PlayerDropItemEvent event) {
+        if (deliveryItem(event.getItemDrop().getItemStack())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onUse(PlayerInteractEvent event) {
+        if (deliveryItem(event.getItem())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onMove(InventoryMoveItemEvent event) {
+        if (deliveryItem(event.getItem())) {
+            event.setCancelled(true);
         }
     }
 
@@ -209,6 +247,14 @@ public class ShopTrade implements Listener {
 
     public boolean isBusy(long shopId) {
         return lockedShops.contains(shopId);
+    }
+
+    public boolean reserveRemoval(long shopId) {
+        return lockedShops.add(shopId);
+    }
+
+    public void releaseRemoval(long shopId) {
+        lockedShops.remove(shopId);
     }
 
     public void start() {
@@ -234,13 +280,26 @@ public class ShopTrade implements Listener {
         });
     }
 
-    public void closeAll() {
+    public CompletableFuture<Void> closeAll() {
+        List<CompletableFuture<Void>> closings = new java.util.ArrayList<>();
         for (UUID playerId : Set.copyOf(sessions.keySet())) {
-            close(playerId, Bukkit.getPlayer(playerId), true);
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null || Bukkit.isOwnedByCurrentRegion(player)) {
+                closings.add(close(playerId, player, true));
+                continue;
+            }
+            CompletableFuture<Void> closing = new CompletableFuture<>();
+            closings.add(closing);
+            sched.entity(player,
+                    () -> close(playerId, player, true)
+                            .whenComplete((ignored, error) -> complete(closing, error)),
+                    () -> close(playerId, null, true)
+                            .whenComplete((ignored, error) -> complete(closing, error)));
         }
         for (UUID playerId : Set.copyOf(pendingReturns.keySet())) {
-            depositPendingReturn(playerId);
+            closings.add(depositPendingReturn(playerId));
         }
+        return CompletableFuture.allOf(closings.toArray(CompletableFuture[]::new));
     }
 
     private void startPendingProduct(InventoryClickEvent event, Player player, Session session) {
@@ -278,16 +337,15 @@ public class ShopTrade implements Listener {
             return;
         }
         session.purchasePending = true;
+        session.transactionId = transactionId;
+        session.escrowed = false;
         shopStore.prepareSale(transactionId.toString(), shop, player.getUniqueId(), slot,
                         product.getAmount(), shop.price(), payment.buyer, payment.seller,
                         product.serializeAsBytes(), gson.toJson(event.adjustments()))
                 .thenRun(() -> {
-                    if (sched.entity(player, () -> escrowAndComplete(player, session, shop,
+                    sched.entity(player, () -> escrowAndComplete(player, session, shop,
                             slot, product, transactionId, payment, event.adjustments()),
-                            () -> cancelPrepared(player, session, transactionId, Map.of()))
-                            != Sched.ScheduleResult.SCHEDULED) {
-                        cancelPrepared(player, session, transactionId, Map.of());
-                    }
+                            () -> cancelPrepared(player, session, transactionId, Map.of()));
                 })
                 .exceptionally(error -> {
                     finishPending(player.getUniqueId(), session);
@@ -300,7 +358,7 @@ public class ShopTrade implements Listener {
                                    ItemStack product, UUID transactionId, Payment payment,
                                    List<PurchaseAdjustment> adjustments) {
         if (sessions.get(player.getUniqueId()) != session || !session.purchasePending) {
-            shopStore.rollback(transactionId.toString(), player.getUniqueId(), Map.of());
+            cancelPrepared(player, session, transactionId, Map.of());
             return;
         }
         ItemStack current = session.inventory.getItem(slot);
@@ -311,10 +369,11 @@ public class ShopTrade implements Listener {
         }
         session.inventory.setItem(slot, null);
         takePayment(session, payment.buyer);
+        session.escrowed = true;
         if (sched.region(session.location, () -> takePhysicalAndComplete(player, session, shop,
                 slot, product, transactionId, payment, adjustments)) != Sched.ScheduleResult.SCHEDULED) {
             restoreFailedPurchase(player, session, shop, product, transactionId, payment.buyer,
-                    slot, new IllegalStateException("Shop region is unavailable"));
+                    slot, false, new IllegalStateException("Shop region is unavailable"));
         }
     }
 
@@ -324,7 +383,7 @@ public class ShopTrade implements Listener {
         ItemStack physical = session.physical.getItem(slot);
         if (physical == null || !physical.isSimilar(product) || physical.getAmount() != product.getAmount()) {
             restoreFailedPurchase(player, session, shop, product, transactionId, payment.buyer,
-                    slot, new IllegalStateException("Shop item changed before commit"));
+                    slot, true, new IllegalStateException("Shop item changed before commit"));
             return;
         }
         session.physical.setItem(slot, null);
@@ -341,7 +400,7 @@ public class ShopTrade implements Listener {
                 .thenAccept(completed -> {
                     if (!completed) {
                         restoreFailedPurchase(player, session, shop, product, transactionId, payment.buyer, itemSlot,
-                                new IllegalStateException("Transaction is no longer prepared"));
+                                true, new IllegalStateException("Transaction is no longer prepared"));
                         return;
                     }
                     shops.recordSale(shop.id(), amount, items);
@@ -355,36 +414,46 @@ public class ShopTrade implements Listener {
                 })
                 .exceptionally(error -> {
                     restoreFailedPurchase(player, session, shop, product, transactionId,
-                            payment.buyer, itemSlot, error);
+                            payment.buyer, itemSlot, true, error);
                     return null;
                 });
     }
 
     private void deliver(Player player, String transactionId, ItemStack product, int items, long amount) {
         sched.entity(player, () -> {
-            if (!player.isOnline() || !canFit(player.getInventory(), product)) {
+            ItemStack delivery = deliveryItem(product, "transaction:" + transactionId);
+            if (!player.isOnline() || !canFit(player.getInventory(), delivery)) {
                 return;
             }
-            Map<Integer, ItemStack> overflow = player.getInventory().addItem(product.clone());
+            Map<Integer, ItemStack> overflow = player.getInventory().addItem(delivery);
             if (!overflow.isEmpty()) {
                 return;
             }
-            shopStore.delivered(transactionId);
-            sounds.buyerPurchase(player);
-            msg.send(player, "purchase-success", Map.of("items", items, "amount", amount),
-                    Map.of("item", itemNames.component(product.getType())));
+            confirmDelivery(player, transactionId, () -> {
+                sounds.buyerPurchase(player);
+                msg.send(player, "purchase-success", Map.of("items", items, "amount", amount),
+                        Map.of("item", itemNames.component(product.getType())));
+            });
         });
     }
 
     private void deliverPending(Player player) {
         shopStore.pendingDeliveries(player.getUniqueId()).thenAccept(pending -> sched.entity(player, () -> {
+            Set<String> active = pending.stream().map(ShopStore.PendingDelivery::transactionId)
+                    .map(id -> "transaction:" + id).collect(java.util.stream.Collectors.toSet());
+            clearStaleMarkers(player.getInventory(), "transaction:", active);
             for (ShopStore.PendingDelivery delivery : pending) {
-                ItemStack product = ItemStack.deserializeBytes(delivery.itemSnapshot());
+                String marker = "transaction:" + delivery.transactionId();
+                if (hasMarker(player.getInventory(), marker)) {
+                    confirmDelivery(player, delivery.transactionId());
+                    continue;
+                }
+                ItemStack product = deliveryItem(ItemStack.deserializeBytes(delivery.itemSnapshot()), marker);
                 if (!canFit(player.getInventory(), product)) {
                     return;
                 }
                 if (player.getInventory().addItem(product).isEmpty()) {
-                    shopStore.delivered(delivery.transactionId());
+                    confirmDelivery(player, delivery.transactionId());
                 }
             }
         }));
@@ -392,16 +461,98 @@ public class ShopTrade implements Listener {
 
     private void deliverRecovery(Player player) {
         shopStore.recoveryItems(player.getUniqueId()).thenAccept(items -> sched.entity(player, () -> {
+            Set<String> active = items.stream().map(ShopStore.RecoveryItem::id)
+                    .map(id -> "recovery:" + id).collect(java.util.stream.Collectors.toSet());
+            clearStaleMarkers(player.getInventory(), "recovery:", active);
             for (ShopStore.RecoveryItem recovery : items) {
-                ItemStack item = ItemStack.deserializeBytes(recovery.itemSnapshot());
+                String marker = "recovery:" + recovery.id();
+                if (hasMarker(player.getInventory(), marker)) {
+                    confirmRecovery(player, recovery.id());
+                    continue;
+                }
+                ItemStack item = deliveryItem(ItemStack.deserializeBytes(recovery.itemSnapshot()), marker);
                 if (!canFit(player.getInventory(), item)) {
                     return;
                 }
                 if (player.getInventory().addItem(item).isEmpty()) {
-                    shopStore.recoveryDelivered(recovery.id());
+                    confirmRecovery(player, recovery.id());
                 }
             }
         }));
+    }
+
+    private void confirmDelivery(Player player, String transactionId, Runnable completed) {
+        String marker = "transaction:" + transactionId;
+        shopStore.delivered(transactionId).thenRun(() -> sched.entity(player, () -> {
+            clearMarker(player.getInventory(), marker);
+            if (completed != null) {
+                completed.run();
+            }
+        }));
+    }
+
+    private void confirmDelivery(Player player, String transactionId) {
+        confirmDelivery(player, transactionId, null);
+    }
+
+    private void confirmRecovery(Player player, long recoveryId) {
+        String marker = "recovery:" + recoveryId;
+        shopStore.recoveryDelivered(recoveryId)
+                .thenRun(() -> sched.entity(player, () -> clearMarker(player.getInventory(), marker)));
+    }
+
+    private ItemStack deliveryItem(ItemStack source, String marker) {
+        ItemStack item = source.clone();
+        org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
+        meta.getPersistentDataContainer().set(deliveryKey, PersistentDataType.STRING, marker);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private boolean deliveryItem(ItemStack item) {
+        return !isEmpty(item) && item.getItemMeta().getPersistentDataContainer()
+                .has(deliveryKey, PersistentDataType.STRING);
+    }
+
+    private boolean hasMarker(Inventory inventory, String marker) {
+        for (ItemStack item : inventory.getContents()) {
+            if (marker.equals(marker(item))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void clearStaleMarkers(Inventory inventory, String prefix, Set<String> active) {
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            String marker = marker(item);
+            if (marker != null && marker.startsWith(prefix) && !active.contains(marker)) {
+                clearMarker(item);
+                inventory.setItem(slot, item);
+            }
+        }
+    }
+
+    private void clearMarker(Inventory inventory, String marker) {
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (marker.equals(marker(item))) {
+                clearMarker(item);
+                inventory.setItem(slot, item);
+            }
+        }
+    }
+
+    private void clearMarker(ItemStack item) {
+        org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
+        meta.getPersistentDataContainer().remove(deliveryKey);
+        item.setItemMeta(meta);
+    }
+
+    private String marker(ItemStack item) {
+        return isEmpty(item) ? null : item.getItemMeta().getPersistentDataContainer()
+                .get(deliveryKey, PersistentDataType.STRING);
     }
 
     private CompletableFuture<Void> recover(ShopStore.PreparedTransaction transaction) {
@@ -447,41 +598,72 @@ public class ShopTrade implements Listener {
 
     private void finishRecovery(ShopStore.PreparedTransaction transaction, boolean recoverItem,
                                 CompletableFuture<Void> recovered) {
-        shopStore.recoverRollback(transaction, recoverItem).whenComplete((ignored, error) -> {
+        shopStore.recoverRollback(transaction, recoverItem).whenComplete((applied, error) -> {
             if (error != null) {
                 recovered.completeExceptionally(error);
                 return;
             }
-            Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
-                    UUID.fromString(transaction.transactionId()), transaction.shopId(), transaction.buyerId()));
+            if (applied) {
+                Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
+                        UUID.fromString(transaction.transactionId()), transaction.shopId(), transaction.buyerId()));
+            }
             recovered.complete(null);
         });
     }
 
     private void restoreFailedPurchase(Player player, Session session, Shop shop, ItemStack product,
                                        UUID transactionId, Map<Currency, Long> payment,
-                                       int itemSlot, Throwable error) {
+                                       int itemSlot, boolean productRemoved, Throwable error) {
         logger.log(Level.SEVERE, "Не удалось завершить продажу #" + shop.id(), error);
-        sched.region(session.location, () -> {
-            if (session.physical.getItem(itemSlot) == null) {
-                session.physical.setItem(itemSlot, product.clone());
-            }
-        });
         sched.entity(player, () -> {
             if (sessions.get(player.getUniqueId()) == session && session.inventory.getItem(itemSlot) == null) {
                 session.inventory.setItem(itemSlot, product.clone());
             }
             finishPending(player.getUniqueId(), session);
         }, () -> finishPending(player.getUniqueId(), session));
-        shopStore.rollback(transactionId.toString(), player.getUniqueId(), payment)
-                .thenRun(() -> Bukkit.getPluginManager().callEvent(
-                        new ShopTransactionRolledBackEvent(transactionId, shop.id(), player.getUniqueId())));
+        if (!productRemoved) {
+            rollbackFailedPurchase(player, shop, product, transactionId, payment, false);
+            return;
+        }
+        Runnable restore = () -> {
+            ItemStack current = session.physical.getItem(itemSlot);
+            boolean recoverItem = current != null && (!current.isSimilar(product)
+                    || current.getAmount() != product.getAmount());
+            if (current == null) {
+                session.physical.setItem(itemSlot, product.clone());
+            }
+            rollbackFailedPurchase(player, shop, product, transactionId, payment, recoverItem);
+        };
+        if (Bukkit.isOwnedByCurrentRegion(session.location)) {
+            restore.run();
+        } else if (sched.region(session.location, restore) != Sched.ScheduleResult.SCHEDULED) {
+            rollbackFailedPurchase(player, shop, product, transactionId, payment, true);
+        }
+    }
+
+    private void rollbackFailedPurchase(Player player, Shop shop, ItemStack product,
+                                        UUID transactionId, Map<Currency, Long> payment,
+                                        boolean recoverItem) {
+        shopStore.rollback(transactionId.toString(), player.getUniqueId(), payment,
+                        shop.ownerId(), product.serializeAsBytes(), recoverItem)
+                .thenAccept(applied -> {
+                    if (applied) {
+                        Bukkit.getPluginManager().callEvent(
+                                new ShopTransactionRolledBackEvent(transactionId, shop.id(), player.getUniqueId()));
+                    }
+                });
     }
 
     private void cancelPrepared(Player player, Session session, UUID transactionId,
                                 Map<Currency, Long> refund) {
         finishPending(player.getUniqueId(), session);
-        shopStore.rollback(transactionId.toString(), player.getUniqueId(), refund);
+        shopStore.rollback(transactionId.toString(), player.getUniqueId(), refund)
+                .thenAccept(applied -> {
+                    if (applied) {
+                        Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
+                                transactionId, session.shop.id(), player.getUniqueId()));
+                    }
+                });
     }
 
     private boolean isProductPickup(InventoryClickEvent event, Session session) {
@@ -751,17 +933,28 @@ public class ShopTrade implements Listener {
         return false;
     }
 
-    private void close(UUID playerId, Player player) {
-        close(playerId, player, false);
+    private CompletableFuture<Void> close(UUID playerId, Player player) {
+        return close(playerId, player, false);
     }
 
-    private void close(UUID playerId, Player player, boolean persistPayment) {
+    private CompletableFuture<Void> close(UUID playerId, Player player, boolean persistPayment) {
         Session session = sessions.remove(playerId);
         if (session == null) {
-            return;
+            return CompletableFuture.completedFuture(null);
         }
         if (!session.purchasePending) {
             lockedShops.remove(session.shop.id());
+        }
+        CompletableFuture<Void> rollback = CompletableFuture.completedFuture(null);
+        if (session.purchasePending && !session.escrowed && session.transactionId != null) {
+            UUID transactionId = session.transactionId;
+            rollback = shopStore.rollback(transactionId.toString(), playerId, Map.of()).thenAccept(applied -> {
+                finishPending(playerId, session);
+                if (applied) {
+                    Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
+                            transactionId, session.shop.id(), playerId));
+                }
+            });
         }
         EnumMap<Currency, Long> returned = new EnumMap<>(Currency.class);
         for (int slot : session.paymentSlots) {
@@ -776,8 +969,7 @@ public class ShopTrade implements Listener {
             }
         }
         if (persistPayment || player == null || !player.isOnline()) {
-            returned.forEach((currency, amount) -> balances.deposit(playerId, currency, amount));
-            return;
+            return CompletableFuture.allOf(rollback, deposit(playerId, returned));
         }
         pendingReturns.merge(playerId, returned, (current, added) -> {
             added.forEach((currency, amount) -> current.merge(currency, amount, Long::sum));
@@ -793,17 +985,33 @@ public class ShopTrade implements Listener {
                 }
             }
         }, () -> depositPendingReturn(playerId));
+        return rollback;
     }
 
-    private void depositPendingReturn(UUID playerId) {
+    private CompletableFuture<Void> depositPendingReturn(UUID playerId) {
         EnumMap<Currency, Long> payment = pendingReturns.remove(playerId);
-        if (payment != null) {
-            payment.forEach((currency, amount) -> balances.deposit(playerId, currency, amount));
+        return payment == null ? CompletableFuture.completedFuture(null) : deposit(playerId, payment);
+    }
+
+    private CompletableFuture<Void> deposit(UUID playerId, Map<Currency, Long> payment) {
+        List<CompletableFuture<Void>> deposits = payment.entrySet().stream()
+                .map(entry -> balances.deposit(playerId, entry.getKey(), entry.getValue()))
+                .toList();
+        return CompletableFuture.allOf(deposits.toArray(CompletableFuture[]::new));
+    }
+
+    private void complete(CompletableFuture<Void> future, Throwable error) {
+        if (error == null) {
+            future.complete(null);
+        } else {
+            future.completeExceptionally(error);
         }
     }
 
     private void finishPending(UUID playerId, Session session) {
         session.purchasePending = false;
+        session.transactionId = null;
+        session.escrowed = false;
         if (sessions.get(playerId) != session) {
             lockedShops.remove(session.shop.id());
         }
@@ -833,6 +1041,8 @@ public class ShopTrade implements Listener {
         private final Set<Integer> paymentSlots = new HashSet<>();
         private final org.bukkit.Location location;
         private volatile boolean purchasePending;
+        private volatile boolean escrowed;
+        private UUID transactionId;
         private Session(Shop shop, Inventory physical, net.kyori.adventure.text.Component title,
                         org.bukkit.Location location) {
             this.shop = shop;

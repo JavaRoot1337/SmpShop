@@ -17,8 +17,7 @@ public class OtherMsg {
     private static final String RESOURCE = "message_other.yml";
 
     private final JavaPlugin plugin;
-    private FileConfiguration messages;
-    private boolean invalidFile;
+    private volatile FileConfiguration messages;
 
     public OtherMsg(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -27,15 +26,20 @@ public class OtherMsg {
 
     public void reload() {
         File file = new File(plugin.getDataFolder(), RESOURCE);
-        invalidFile = false;
         if (!file.exists()) {
             plugin.saveResource(RESOURCE, false);
         }
-        messages = loadFile(file);
-        messages.setDefaults(loadDefaults());
-        if (invalidFile) {
-            plugin.getLogger().warning(raw("message-file-invalid", Map.of("resource", RESOURCE)));
-        }
+        YamlConfiguration loaded = loadFile(file);
+        loaded.setDefaults(loadDefaults());
+        messages = loaded;
+    }
+
+    public FileConfiguration snapshot() {
+        return messages;
+    }
+
+    public void restore(FileConfiguration snapshot) {
+        messages = snapshot;
     }
 
     public String raw(String key) {
@@ -80,7 +84,7 @@ public class OtherMsg {
         try {
             loaded.load(file);
         } catch (IOException | InvalidConfigurationException exception) {
-            invalidFile = true;
+            throw new IllegalStateException("Invalid " + RESOURCE, exception);
         }
         return loaded;
     }

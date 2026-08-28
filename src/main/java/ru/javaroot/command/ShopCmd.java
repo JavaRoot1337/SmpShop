@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import ru.javaroot.SmpShop;
 import ru.javaroot.config.Cfg;
 import ru.javaroot.config.Msg;
+import ru.javaroot.config.OtherMsg;
 import ru.javaroot.gui.BalanceInv;
 import ru.javaroot.gui.ShopListInv;
 import ru.javaroot.integration.IntegrationHub;
@@ -24,6 +25,7 @@ public class ShopCmd implements CommandExecutor {
     private final SmpShop plugin;
     private final Cfg cfg;
     private final Msg msg;
+    private final OtherMsg other;
     private final ShopMgr shops;
     private final Sched sched;
     private final IntegrationHub integrations;
@@ -32,11 +34,12 @@ public class ShopCmd implements CommandExecutor {
     private final ShopListInv listGui;
     private final Map<UUID, Action> actions = new ConcurrentHashMap<>();
 
-    public ShopCmd(SmpShop plugin, Cfg cfg, Msg msg, ShopMgr shops, Sched sched,
+    public ShopCmd(SmpShop plugin, Cfg cfg, Msg msg, OtherMsg other, ShopMgr shops, Sched sched,
                    IntegrationHub integrations, SoundSvc sounds, BalanceInv balanceGui, ShopListInv listGui) {
         this.plugin = plugin;
         this.cfg = cfg;
         this.msg = msg;
+        this.other = other;
         this.shops = shops;
         this.sched = sched;
         this.integrations = integrations;
@@ -208,16 +211,33 @@ public class ShopCmd implements CommandExecutor {
     }
 
     private void reloadAsync(Player player) {
+        org.bukkit.configuration.file.FileConfiguration previousCfg = cfg.snapshot();
+        org.bukkit.configuration.file.FileConfiguration previousMessages = msg.snapshot();
+        org.bukkit.configuration.file.FileConfiguration previousOtherMessages = other.snapshot();
+        IntegrationHub.MessageState previousIntegrationMessages = integrations.messageState();
+        boolean restartAttempted = false;
         try {
             cfg.reload();
+            other.reload();
             integrations.reloadMessages();
             msg.reload();
-            sched.entity(player, () -> {
-                sounds.reload();
-                integrations.reload(sched);
-                msg.send(player, "reload");
-            });
+            sounds.reload();
+            restartAttempted = true;
+            integrations.reload(sched);
+            sched.entity(player, () -> msg.send(player, "reload"));
         } catch (RuntimeException exception) {
+            cfg.restore(previousCfg);
+            msg.restore(previousMessages);
+            other.restore(previousOtherMessages);
+            integrations.restoreMessages(previousIntegrationMessages);
+            sounds.reload();
+            if (restartAttempted) {
+                try {
+                    integrations.reload(sched);
+                } catch (RuntimeException restoreError) {
+                    exception.addSuppressed(restoreError);
+                }
+            }
             plugin.getLogger().warning("Не удалось перезагрузить конфигурацию: " + exception.getMessage());
             sched.entity(player, () -> msg.send(player, "reload-failed"));
         }

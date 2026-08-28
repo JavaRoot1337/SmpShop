@@ -76,11 +76,12 @@ public class SmpShop extends JavaPlugin {
                 new ExternalMsg(this, "message_ds.yml", other));
         balanceGui = new BalanceInv(this, balanceStore, sched, msg);
         listGui = new ShopListInv(this, shops, cfg, msg, sched);
-        trade = new ShopTrade(shops, shopStore, balanceStore, integrations, notifications, sounds, msg, itemNames, sched, getLogger());
+        trade = new ShopTrade(this, shops, shopStore, balanceStore, integrations, notifications, sounds,
+                msg, itemNames, sched, getLogger());
         api = new SmpShopApiImpl(this, shops, shopStore, balanceStore, balanceGui, listGui, trade, sched, cfg);
         getServer().getServicesManager().register(SmpShopApi.class, api, this, ServicePriority.Normal);
 
-        ShopCmd shopCmd = new ShopCmd(this, cfg, msg, shops, sched, integrations, sounds, balanceGui, listGui);
+        ShopCmd shopCmd = new ShopCmd(this, cfg, msg, other, shops, sched, integrations, sounds, balanceGui, listGui);
         PluginCommand command = getCommand("smpshop");
         if (command == null) {
             throw new IllegalStateException(other.raw("command-not-registered"));
@@ -144,13 +145,23 @@ public class SmpShop extends JavaPlugin {
         }
         if (balanceGui != null) {
             try {
-                balanceGui.closeAll().join();
-            } catch (java.util.concurrent.CompletionException exception) {
-                getLogger().log(Level.SEVERE, "Не удалось сохранить balance-сессии", exception.getCause());
+                balanceGui.closeAll().get(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                getLogger().log(Level.SEVERE, "Сохранение balance-сессий прервано", exception);
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException exception) {
+                getLogger().log(Level.SEVERE, "Не удалось сохранить balance-сессии", exception);
             }
         }
         if (trade != null) {
-            trade.closeAll();
+            try {
+                trade.closeAll().get(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                getLogger().log(Level.SEVERE, "Сохранение shop-сессий прервано", exception);
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException exception) {
+                getLogger().log(Level.SEVERE, "Не удалось сохранить shop-сессии", exception);
+            }
         }
         if (db != null) {
             db.close();

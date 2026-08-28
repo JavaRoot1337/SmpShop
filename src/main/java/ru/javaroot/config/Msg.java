@@ -25,7 +25,7 @@ public class Msg {
     private final JavaPlugin plugin;
     private final OtherMsg other;
     private final ItemIcon itemIcon = new ItemIcon();
-    private FileConfiguration messages;
+    private volatile FileConfiguration messages;
 
     public Msg(JavaPlugin plugin, OtherMsg other) {
         this.plugin = plugin;
@@ -39,10 +39,19 @@ public class Msg {
         if (!file.exists()) {
             plugin.saveResource(resource, false);
         }
-        messages = loadFile(file, resource);
-        removeUnused(file);
+        YamlConfiguration loaded = loadFile(file, resource);
+        removeUnused(loaded, file);
         FileConfiguration defaults = loadDefaults(resource);
-        messages.setDefaults(defaults);
+        loaded.setDefaults(defaults);
+        messages = loaded;
+    }
+
+    public FileConfiguration snapshot() {
+        return messages;
+    }
+
+    public void restore(FileConfiguration snapshot) {
+        messages = snapshot;
     }
 
     public void send(Player player, String key) {
@@ -137,12 +146,12 @@ public class Msg {
         try {
             loaded.load(file);
         } catch (IOException | InvalidConfigurationException exception) {
-            plugin.getLogger().warning(other.raw("message-file-invalid", Map.of("resource", resource)));
+            throw new IllegalStateException(other.raw("message-file-invalid", Map.of("resource", resource)), exception);
         }
         return loaded;
     }
 
-    private void removeUnused(File file) {
+    private void removeUnused(YamlConfiguration loaded, File file) {
         boolean changed = false;
         for (String key : List.of("prefix", "usage", "placement-expired", "not-chest", "balance",
                 "list-empty", "list-entry", "link-created", "balance-diamond", "balance-deepslate",
@@ -153,14 +162,14 @@ public class Msg {
                 "telegram-message-http-error", "telegram-send-error", "discord-http-error",
                 "discord-send-error", "notification-delivery-error", "notification-load-error",
                 "notification-save-error")) {
-            if (messages.contains(key)) {
-                messages.set(key, null);
+            if (loaded.contains(key)) {
+                loaded.set(key, null);
                 changed = true;
             }
         }
         if (changed) {
             try {
-                messages.save(file);
+                loaded.save(file);
             } catch (IOException exception) {
                 throw new IllegalStateException(other.raw("message-file-update-failed", Map.of("resource", "message.yml")), exception);
             }

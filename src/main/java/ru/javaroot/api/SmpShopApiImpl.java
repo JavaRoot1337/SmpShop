@@ -192,6 +192,7 @@ public class SmpShopApiImpl implements SmpShopApi {
 
     public void close() {
         state = ApiState.SHUTTING_DOWN;
+        readyFuture.completeExceptionally(new IllegalStateException("SmpShop API is shutting down"));
         shopOperations.clear();
     }
 
@@ -204,14 +205,15 @@ public class SmpShopApiImpl implements SmpShopApi {
         if (unavailable != null) {
             return CompletableFuture.completedFuture(new ShopResult(unavailable, null));
         }
+        String hash = "create:" + request.ownerId() + ':' + request.ownerName() + ':'
+                + request.first() + ':' + request.second() + ':' + request.price();
         if (request.ownerName().isBlank()
                 || request.price() < cfg.minPrice() || request.price() > cfg.maxPrice()
                 || (request.second() != null
                 && !request.second().worldId().equals(request.first().worldId()))) {
-            return CompletableFuture.completedFuture(new ShopResult(ApiStatus.INVALID_INPUT, null));
+            return status(request.operationId(), request.source().asString(), hash,
+                    "CREATE", ApiStatus.INVALID_INPUT, null);
         }
-        String hash = "create:" + request.ownerId() + ':' + request.ownerName() + ':'
-                + request.first() + ':' + request.second() + ':' + request.price();
         return shopStore.apiResult(request.operationId(), request.source().asString(), hash)
                 .thenCompose(prior -> prior == null ? scheduleCreate(request, hash) : completed(prior));
     }
@@ -221,7 +223,8 @@ public class SmpShopApiImpl implements SmpShopApi {
         if (sched.global(() -> {
             World world = Bukkit.getWorld(request.first().worldId());
             if (world == null) {
-                result.complete(new ShopResult(ApiStatus.NOT_FOUND, null));
+                forward(status(request.operationId(), request.source().asString(), hash,
+                        "CREATE", ApiStatus.NOT_FOUND, null), result);
                 return;
             }
             Location first = location(world, request.first());
@@ -238,21 +241,24 @@ public class SmpShopApiImpl implements SmpShopApi {
                                 CompletableFuture<ShopResult> result) {
         List<ShopKey> keys = keys(request);
         if (!validShopChest(world, request)) {
-            result.complete(new ShopResult(ApiStatus.NOT_FOUND, null));
+            forward(status(request.operationId(), request.source().asString(), hash,
+                    "CREATE", ApiStatus.NOT_FOUND, null), result);
             return;
         }
         int limit = cfg.regularShopLimit();
         if (!shops.tryReserve(request.ownerId(), limit, keys)) {
             ApiStatus status = shops.count(request.ownerId()) >= limit
                     ? ApiStatus.LIMIT_REACHED : ApiStatus.CONFLICT;
-            result.complete(new ShopResult(status, null));
+            forward(status(request.operationId(), request.source().asString(), hash,
+                    "CREATE", status, null), result);
             return;
         }
         ShopCreatePrepareEvent event = new ShopCreatePrepareEvent(request);
         Bukkit.getPluginManager().callEvent(event);
         if (event.isCancelled()) {
             shops.release(request.ownerId(), keys);
-            result.complete(new ShopResult(ApiStatus.CONFLICT, null));
+            forward(status(request.operationId(), request.source().asString(), hash,
+                    "CREATE", ApiStatus.CONFLICT, null), result);
             return;
         }
         Shop draft = draft(request);
@@ -284,11 +290,12 @@ public class SmpShopApiImpl implements SmpShopApi {
         if (unavailable != null) {
             return CompletableFuture.completedFuture(new ShopResult(unavailable, null));
         }
+        String hash = "price:" + request.shopId() + ':' + request.price();
         if (request.shopId() < 1
                 || request.price() < cfg.minPrice() || request.price() > cfg.maxPrice()) {
-            return CompletableFuture.completedFuture(new ShopResult(ApiStatus.INVALID_INPUT, null));
+            return status(request.operationId(), request.source().asString(), hash,
+                    "PRICE", ApiStatus.INVALID_INPUT, null);
         }
-        String hash = "price:" + request.shopId() + ':' + request.price();
         return shopStore.apiUpdatePrice(request.operationId(), request.source().asString(), hash,
                         request.shopId(), request.price())
                 .thenApply(stored -> {
@@ -309,10 +316,11 @@ public class SmpShopApiImpl implements SmpShopApi {
         if (unavailable != null) {
             return CompletableFuture.completedFuture(new ShopResult(unavailable, null));
         }
-        if (request.shopId() < 1) {
-            return CompletableFuture.completedFuture(new ShopResult(ApiStatus.INVALID_INPUT, null));
-        }
         String hash = "delete:" + request.shopId();
+        if (request.shopId() < 1) {
+            return status(request.operationId(), request.source().asString(), hash,
+                    "DELETE", ApiStatus.INVALID_INPUT, null);
+        }
         return shopStore.apiResult(request.operationId(), request.source().asString(), hash)
                 .thenCompose(prior -> prior == null ? removeNew(request, hash) : completed(prior));
     }
@@ -320,10 +328,12 @@ public class SmpShopApiImpl implements SmpShopApi {
     private CompletableFuture<ShopResult> removeNew(ShopRemove request, String hash) {
         Shop shop = shops.find(request.shopId());
         if (shop == null) {
-            return CompletableFuture.completedFuture(new ShopResult(ApiStatus.NOT_FOUND, null));
+            return status(request.operationId(), request.source().asString(), hash,
+                    "DELETE", ApiStatus.NOT_FOUND, null);
         }
         if (trade.isBusy(shop.id())) {
-            return CompletableFuture.completedFuture(new ShopResult(ApiStatus.BUSY, snapshot(shop)));
+            return status(request.operationId(), request.source().asString(), hash,
+                    "DELETE", ApiStatus.BUSY, shop.id());
         }
         CompletableFuture<ShopResult> result = new CompletableFuture<>();
         if (sched.global(() -> {
@@ -345,24 +355,35 @@ public class SmpShopApiImpl implements SmpShopApi {
 
     private void removeAfterPrepare(ShopRemove request, Shop shop, String hash,
                                     CompletableFuture<ShopResult> result) {
+        if (!trade.reserveRemoval(shop.id())) {
+            forward(status(request.operationId(), request.source().asString(), hash,
+                    "DELETE", ApiStatus.BUSY, shop.id()), result);
+            return;
+        }
         ShopRemovePrepareEvent event = new ShopRemovePrepareEvent(request.operationId(), snapshot(shop));
         Bukkit.getPluginManager().callEvent(event);
         if (event.isCancelled()) {
-            result.complete(new ShopResult(ApiStatus.CONFLICT, snapshot(shop)));
+            trade.releaseRemoval(shop.id());
+            forward(status(request.operationId(), request.source().asString(), hash,
+                    "DELETE", ApiStatus.CONFLICT, shop.id()), result);
             return;
         }
         shopStore.apiDelete(request.operationId(), request.source().asString(), hash, request.shopId())
                 .whenComplete((stored, error) -> {
-                    if (error != null) {
-                        result.completeExceptionally(error);
-                        return;
+                    try {
+                        if (error != null) {
+                            result.completeExceptionally(error);
+                            return;
+                        }
+                        if ("SUCCESS".equals(stored.status()) && stored.applied()) {
+                            shops.remove(shop);
+                            Bukkit.getPluginManager().callEvent(new ShopChangedEvent(request.operationId(),
+                                    ShopChangedEvent.ChangeType.REMOVED, snapshot(shop)));
+                        }
+                        result.complete(result(stored));
+                    } finally {
+                        trade.releaseRemoval(shop.id());
                     }
-                    if ("SUCCESS".equals(stored.status()) && stored.applied()) {
-                        shops.remove(shop);
-                        Bukkit.getPluginManager().callEvent(new ShopChangedEvent(request.operationId(),
-                                ShopChangedEvent.ChangeType.REMOVED, snapshot(shop)));
-                    }
-                    result.complete(result(stored));
                 });
     }
 
@@ -403,15 +424,36 @@ public class SmpShopApiImpl implements SmpShopApi {
         if (existing != null) {
             return existing;
         }
-        action.run().whenComplete((value, error) -> {
+        try {
+            action.run().whenComplete((value, error) -> {
+                shopOperations.remove(key, created);
+                if (error == null) {
+                    created.complete(value);
+                } else {
+                    created.completeExceptionally(error);
+                }
+            });
+        } catch (RuntimeException exception) {
             shopOperations.remove(key, created);
+            created.completeExceptionally(exception);
+        }
+        return created;
+    }
+
+    private CompletableFuture<ShopResult> status(UUID operationId, String source, String hash,
+                                                  String type, ApiStatus status, Long shopId) {
+        return shopStore.apiStatus(operationId, source, hash, type, status.name(), shopId)
+                .thenApply(this::result);
+    }
+
+    private void forward(CompletableFuture<ShopResult> source, CompletableFuture<ShopResult> target) {
+        source.whenComplete((value, error) -> {
             if (error == null) {
-                created.complete(value);
+                target.complete(value);
             } else {
-                created.completeExceptionally(error);
+                target.completeExceptionally(error);
             }
         });
-        return created;
     }
 
     private CompletableFuture<ShopResult> completed(ShopStore.ApiShopResult stored) {

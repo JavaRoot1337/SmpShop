@@ -52,8 +52,13 @@ public class Sched {
             return ScheduleResult.REJECTED;
         }
         try {
-            return entity.getScheduler().execute(plugin, task, retired, 0L)
-                    ? ScheduleResult.SCHEDULED : ScheduleResult.RETIRED;
+            if (entity.getScheduler().execute(plugin, task, retired, 0L)) {
+                return ScheduleResult.SCHEDULED;
+            }
+            if (retired != null) {
+                retired.run();
+            }
+            return ScheduleResult.RETIRED;
         } catch (RejectedExecutionException | IllegalStateException exception) {
             if (retired != null) {
                 retired.run();

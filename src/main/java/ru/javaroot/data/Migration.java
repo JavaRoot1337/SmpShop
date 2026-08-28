@@ -8,7 +8,7 @@ import java.sql.Statement;
 import java.nio.file.Path;
 
 public class Migration {
-    private static final int LATEST_VERSION = 10;
+    private static final int LATEST_VERSION = 11;
 
     public void apply(Connection connection, Path databaseFile) throws SQLException {
         try (Statement statement = connection.createStatement()) {
@@ -82,6 +82,10 @@ public class Migration {
                 case 10 -> {
                     statement.executeUpdate("CREATE TABLE IF NOT EXISTS item_recovery (id INTEGER PRIMARY KEY AUTOINCREMENT, transaction_id TEXT NOT NULL UNIQUE, player_uuid TEXT NOT NULL, item_snapshot BLOB NOT NULL, created_at INTEGER NOT NULL, delivered_at INTEGER)");
                     statement.executeUpdate("CREATE INDEX IF NOT EXISTS item_recovery_player ON item_recovery(player_uuid, delivered_at)");
+                }
+                case 11 -> {
+                    statement.executeUpdate("UPDATE transactions SET state = 'DELIVERED', delivered_at = COALESCE(completed_at, created_at) WHERE state = 'COMPLETED' AND item_snapshot IS NULL");
+                    statement.executeUpdate("UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = created_at WHERE state = 'PREPARED' AND (transaction_key IS NULL OR item_snapshot IS NULL)");
                 }
                 default -> throw new SQLException("Unknown migration: " + version);
             }

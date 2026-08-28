@@ -167,13 +167,19 @@ public class BalanceInv implements Listener {
 
             CompletableFuture<Void> closing = new CompletableFuture<>();
             closings.add(closing);
-            sched.entity(player, () -> {
+            Runnable close = () -> {
                 capture(session);
                 if (player.getOpenInventory().getTopInventory() == session.inventory) {
                     player.closeInventory();
                 }
                 settleAndUnlock(session, player).whenComplete((ignored, error) -> complete(closing, error));
-            }, () -> settleAndUnlock(session, null).whenComplete((ignored, error) -> complete(closing, error)));
+            };
+            if (Bukkit.isOwnedByCurrentRegion(player)) {
+                close.run();
+            } else {
+                sched.entity(player, close,
+                        () -> settleAndUnlock(session, null).whenComplete((ignored, error) -> complete(closing, error)));
+            }
         }
         return CompletableFuture.allOf(closings.toArray(CompletableFuture[]::new));
     }
@@ -247,9 +253,8 @@ public class BalanceInv implements Listener {
     }
 
     private void close(Player player, Session session) {
-        sched.entity(player, () -> {
-            settleAndUnlock(session, player).whenComplete((ignored, error) -> logIfFailed("Не удалось сохранить баланс", error));
-        }, () -> settleAndUnlock(session, null).whenComplete((ignored, error) -> logIfFailed("Не удалось сохранить баланс", error)));
+        settleAndUnlock(session, player)
+                .whenComplete((ignored, error) -> logIfFailed("Не удалось сохранить баланс", error));
     }
 
     private CompletableFuture<Void> settleAndUnlock(Session session, Player player) {

@@ -14,6 +14,8 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ShopStoreTest {
     @Test
@@ -62,6 +64,55 @@ class ShopStoreTest {
             assertEquals(2L, values[1]);
             assertEquals(7L, values[2]);
             assertEquals(3L, values[3]);
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
+    void persistsRejectedOperationsAndRollsBackBalanceOverflow(@TempDir Path dataDir) {
+        UUID ownerId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        Sqlite db = new Sqlite(plugin(dataDir.toFile()), "guarded.db", 5);
+        db.start().join();
+        try {
+            ShopStore store = new ShopStore(db);
+            ShopStore.ApiShopResult first = store.apiStatus(operationId, "test:shop", "delete:1",
+                    "DELETE", "BUSY", null).join();
+            ShopStore.ApiShopResult replay = store.apiStatus(operationId, "test:shop", "delete:1",
+                    "DELETE", "SUCCESS", null).join();
+            ShopStore.ApiShopResult conflict = store.apiStatus(operationId, "test:shop", "delete:2",
+                    "DELETE", "NOT_FOUND", null).join();
+            assertEquals("BUSY", first.status());
+            assertEquals("BUSY", replay.status());
+            assertFalse(replay.applied());
+            assertEquals("CONFLICT", conflict.status());
+
+            BalanceStore balances = new BalanceStore(db);
+            balances.change(UUID.randomUUID(), "test:balance", ownerId,
+                    Currency.DIAMOND_ORE, Long.MAX_VALUE).join();
+            Shop draft = new Shop(0, ownerId, "owner", UUID.randomUUID(), 1, 64, 1,
+                    null, null, null, 1, 0, 0, 0, System.currentTimeMillis(), true);
+            long shopId = store.insert(draft).join();
+            Shop shop = new Shop(shopId, draft.ownerId(), draft.ownerName(), draft.worldId(),
+                    draft.x1(), draft.y1(), draft.z1(), null, null, null,
+                    draft.price(), 0, 0, 0, draft.createdAt(), true);
+            store.prepareSale("overflow", shop, UUID.randomUUID(), 0, 1, 1,
+                    Map.of(Currency.DIAMOND_ORE, 1L), Map.of(Currency.DIAMOND_ORE, 1L),
+                    new byte[]{1}, "[]").join();
+            assertThrows(java.util.concurrent.CompletionException.class,
+                    () -> store.completeSale("overflow", shop, 1,
+                            Map.of(Currency.DIAMOND_ORE, 1L)).join());
+            assertEquals(1, store.preparedTransactions().join().size());
+
+            UUID buyerId = UUID.randomUUID();
+            byte[] item = new byte[]{2, 3};
+            store.prepareSale("recovery", shop, buyerId, 1, 1, 2,
+                    Map.of(Currency.DEEPSLATE_DIAMOND_ORE, 2L), Map.of(), item, "[]").join();
+            store.rollback("recovery", buyerId, Map.of(Currency.DEEPSLATE_DIAMOND_ORE, 2L),
+                    ownerId, item, true).join();
+            assertEquals(2, balances.load(buyerId).join().deepslateDiamondOre());
+            assertEquals(1, store.recoveryItems(ownerId).join().size());
         } finally {
             db.close();
         }

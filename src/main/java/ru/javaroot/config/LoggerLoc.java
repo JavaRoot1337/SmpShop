@@ -50,6 +50,14 @@ public class LoggerLoc {
         names = Map.copyOf(loaded);
     }
 
+    public Map<Material, String> snapshot() {
+        return names;
+    }
+
+    public void restore(Map<Material, String> snapshot) {
+        names = snapshot;
+    }
+
     public String name(Material material) {
         return displayName(material.name(), names.get(material));
     }

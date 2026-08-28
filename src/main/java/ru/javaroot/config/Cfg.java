@@ -6,6 +6,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 public class Cfg {
@@ -25,6 +29,7 @@ public class Cfg {
     public synchronized void reload() {
         File file = new File(plugin.getDataFolder(), "config.yml");
         YamlConfiguration candidate = YamlConfiguration.loadConfiguration(file);
+        candidate.setDefaults(loadDefaults());
         validate(candidate);
         boolean changed = migrate(candidate, false);
         validate(candidate);
@@ -36,6 +41,28 @@ public class Cfg {
             }
         }
         cfg = candidate;
+    }
+
+    private FileConfiguration loadDefaults() {
+        InputStream stream = plugin.getResource("config.yml");
+        if (stream == null) {
+            throw new IllegalStateException(other.raw("config-invalid-value"));
+        }
+        try (Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+            YamlConfiguration defaults = new YamlConfiguration();
+            defaults.load(reader);
+            return defaults;
+        } catch (IOException | org.bukkit.configuration.InvalidConfigurationException exception) {
+            throw new IllegalStateException(other.raw("config-invalid-value"), exception);
+        }
+    }
+
+    public FileConfiguration snapshot() {
+        return cfg;
+    }
+
+    public synchronized void restore(FileConfiguration snapshot) {
+        cfg = snapshot;
     }
 
     public int minPrice() {

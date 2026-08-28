@@ -6,6 +6,16 @@ plugins {
 group = "ru.javaroot"
 version = "1.1.0"
 val pluginVersion = version
+val sqliteNativePlatforms = listOf(
+    "Linux/x86_64",
+    "Linux/aarch64",
+    "Linux-Musl/x86_64",
+    "Linux-Musl/aarch64",
+    "Windows/x86_64",
+    "Windows/aarch64",
+    "Mac/x86_64",
+    "Mac/aarch64"
+)
 
 repositories {
     mavenCentral()
@@ -54,8 +64,18 @@ tasks.test {
 tasks.shadowJar {
     archiveBaseName.set("SmpShop")
     archiveClassifier.set("")
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
     relocate("com.google.gson", "ru.javaroot.libs.gson")
+    eachFile {
+        if (path.startsWith("org/sqlite/native/")
+            && sqliteNativePlatforms.none { platform ->
+                path.startsWith("org/sqlite/native/$platform/")
+            }
+        ) {
+            exclude()
+        }
+    }
 }
 
 tasks.build {
@@ -67,6 +87,7 @@ tasks.register<Jar>("testConsumerJar") {
     dependsOn(testConsumer.classesTaskName)
     archiveBaseName.set("SmpShopApiConsumer")
     archiveVersion.set(pluginVersion.toString())
+    destinationDirectory.set(layout.buildDirectory.dir("examples"))
     from(testConsumer.output)
 }
 

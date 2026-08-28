@@ -69,6 +69,19 @@ public class ShopStore {
         return db.submit(connection -> apiOperation(connection, operationId, source, requestHash));
     }
 
+    public CompletableFuture<ApiShopResult> apiStatus(UUID operationId, String source,
+                                                       String requestHash, String type,
+                                                       String status, Long shopId) {
+        return db.submit(connection -> inTransaction(connection, () -> {
+            ApiShopResult prior = apiOperation(connection, operationId, source, requestHash);
+            if (prior != null) {
+                return prior;
+            }
+            recordApiOperation(connection, operationId, source, requestHash, type, status, shopId);
+            return new ApiShopResult(status, shopId == null ? null : readById(connection, shopId), true);
+        }));
+    }
+
     public CompletableFuture<ApiShopResult> apiUpdatePrice(UUID operationId, String source,
                                                             String requestHash, long shopId, int price) {
         return db.submit(connection -> inTransaction(connection, () -> {
@@ -179,21 +192,30 @@ public class ShopStore {
         });
     }
 
-    public CompletableFuture<Void> rollback(String transactionId, UUID buyerId,
-                                            Map<Currency, Long> refund) {
+    public CompletableFuture<Boolean> rollback(String transactionId, UUID buyerId,
+                                               Map<Currency, Long> refund) {
+        return rollback(transactionId, buyerId, refund, null, null, false);
+    }
+
+    public CompletableFuture<Boolean> rollback(String transactionId, UUID buyerId,
+                                               Map<Currency, Long> refund, UUID sellerId,
+                                               byte[] itemSnapshot, boolean recoverItem) {
         return db.submit(connection -> inTransaction(connection, () -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = ? WHERE transaction_key = ? AND state = 'PREPARED'")) {
                 statement.setLong(1, System.currentTimeMillis());
                 statement.setString(2, transactionId);
                 if (statement.executeUpdate() != 1) {
-                    return null;
+                    return false;
                 }
             }
             for (Map.Entry<Currency, Long> entry : refund.entrySet()) {
                 deposit(connection, buyerId, entry.getKey(), entry.getValue());
             }
-            return null;
+            if (recoverItem) {
+                addRecovery(connection, transactionId, sellerId, itemSnapshot);
+            }
+            return true;
         }));
     }
 
@@ -201,7 +223,7 @@ public class ShopStore {
         return db.submit(connection -> {
             List<PendingDelivery> pending = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT transaction_key, shop_id, item_snapshot FROM transactions WHERE buyer_uuid = ? AND state = 'COMPLETED' ORDER BY completed_at")) {
+                    "SELECT transaction_key, shop_id, item_snapshot FROM transactions WHERE buyer_uuid = ? AND state = 'COMPLETED' AND transaction_key IS NOT NULL AND item_snapshot IS NOT NULL ORDER BY completed_at")) {
                 statement.setString(1, buyerId.toString());
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
@@ -217,7 +239,7 @@ public class ShopStore {
         return db.submit(connection -> {
             List<PreparedTransaction> pending = new ArrayList<>();
             try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT transaction_key, shop_id, buyer_uuid, seller_uuid, item_slot, item_snapshot, diamond_ore_amount, deepslate_diamond_ore_amount FROM transactions WHERE state = 'PREPARED' ORDER BY created_at");
+                    "SELECT transaction_key, shop_id, buyer_uuid, seller_uuid, item_slot, item_snapshot, diamond_ore_amount, deepslate_diamond_ore_amount FROM transactions WHERE state = 'PREPARED' AND transaction_key IS NOT NULL AND item_snapshot IS NOT NULL ORDER BY created_at");
                  ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
                     EnumMap<Currency, Long> payment = new EnumMap<>(Currency.class);
@@ -233,30 +255,24 @@ public class ShopStore {
         });
     }
 
-    public CompletableFuture<Void> recoverRollback(PreparedTransaction transaction, boolean recoverItem) {
+    public CompletableFuture<Boolean> recoverRollback(PreparedTransaction transaction, boolean recoverItem) {
         return db.submit(connection -> inTransaction(connection, () -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = ? WHERE transaction_key = ? AND state = 'PREPARED'")) {
                 statement.setLong(1, System.currentTimeMillis());
                 statement.setString(2, transaction.transactionId());
                 if (statement.executeUpdate() != 1) {
-                    return null;
+                    return false;
                 }
             }
             for (Map.Entry<Currency, Long> entry : transaction.payment().entrySet()) {
                 deposit(connection, transaction.buyerId(), entry.getKey(), entry.getValue());
             }
             if (recoverItem) {
-                try (PreparedStatement statement = connection.prepareStatement(
-                        "INSERT INTO item_recovery(transaction_id, player_uuid, item_snapshot, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(transaction_id) DO NOTHING")) {
-                    statement.setString(1, transaction.transactionId());
-                    statement.setString(2, transaction.sellerId().toString());
-                    statement.setBytes(3, transaction.itemSnapshot());
-                    statement.setLong(4, System.currentTimeMillis());
-                    statement.executeUpdate();
-                }
+                addRecovery(connection, transaction.transactionId(), transaction.sellerId(),
+                        transaction.itemSnapshot());
             }
-            return null;
+            return true;
         }));
     }
 
@@ -293,10 +309,28 @@ public class ShopStore {
             return;
         }
         String column = currency == Currency.DIAMOND_ORE ? "diamond_ore" : "deepslate_diamond_ore";
-        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO balances(player_uuid, diamond_ore, deepslate_diamond_ore, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(player_uuid) DO UPDATE SET " + column + " = " + column + " + excluded." + column + ", updated_at = excluded.updated_at")) {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO balances(player_uuid, diamond_ore, deepslate_diamond_ore, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(player_uuid) DO UPDATE SET " + column + " = " + column + " + excluded." + column + ", updated_at = excluded.updated_at WHERE " + column + " <= ? - excluded." + column)) {
             statement.setString(1, playerId.toString());
             statement.setLong(2, currency == Currency.DIAMOND_ORE ? amount : 0);
             statement.setLong(3, currency == Currency.DEEPSLATE_DIAMOND_ORE ? amount : 0);
+            statement.setLong(4, System.currentTimeMillis());
+            statement.setLong(5, Long.MAX_VALUE);
+            if (statement.executeUpdate() != 1) {
+                throw new SQLException("Balance overflow");
+            }
+        }
+    }
+
+    private void addRecovery(java.sql.Connection connection, String transactionId, UUID playerId,
+                             byte[] itemSnapshot) throws SQLException {
+        if (playerId == null || itemSnapshot == null) {
+            throw new SQLException("Missing item recovery data");
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO item_recovery(transaction_id, player_uuid, item_snapshot, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(transaction_id) DO NOTHING")) {
+            statement.setString(1, transactionId);
+            statement.setString(2, playerId.toString());
+            statement.setBytes(3, itemSnapshot);
             statement.setLong(4, System.currentTimeMillis());
             statement.executeUpdate();
         }

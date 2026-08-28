@@ -78,7 +78,7 @@ public class DiscordWebhook {
                     return true;
                 })
                 .exceptionally(error -> {
-                    logger.warning(other.raw("discord-send-error", Map.of("error", String.valueOf(error.getMessage()))));
+                    logger.warning(other.raw("discord-send-error", Map.of("error", "request failed")));
                     return false;
                 });
     }

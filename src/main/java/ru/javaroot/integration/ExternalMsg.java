@@ -14,7 +14,7 @@ public class ExternalMsg {
     private final JavaPlugin plugin;
     private final String resource;
     private final OtherMsg other;
-    private YamlConfiguration messages;
+    private volatile YamlConfiguration messages;
 
     public ExternalMsg(JavaPlugin plugin, String resource, OtherMsg other) {
         this.plugin = plugin;
@@ -28,13 +28,22 @@ public class ExternalMsg {
         if (!file.exists()) {
             plugin.saveResource(resource, false);
         }
-        messages = new YamlConfiguration();
+        YamlConfiguration loaded = new YamlConfiguration();
         try {
-            messages.load(file);
+            loaded.load(file);
         } catch (IOException | InvalidConfigurationException exception) {
             throw new IllegalStateException(other.raw("external-message-load-failed", Map.of("resource", resource)), exception);
         }
-        removeLegacyTestMessages(file);
+        removeLegacyTestMessages(loaded, file);
+        messages = loaded;
+    }
+
+    public YamlConfiguration snapshot() {
+        return messages;
+    }
+
+    public void restore(YamlConfiguration snapshot) {
+        messages = snapshot;
     }
 
     public String text(String key, Map<String, ?> values) {
@@ -48,7 +57,7 @@ public class ExternalMsg {
         return value;
     }
 
-    private void removeLegacyTestMessages(File file) {
+    private void removeLegacyTestMessages(YamlConfiguration loaded, File file) {
         List<String> keys;
         if (resource.equals("message_tg.yml")) {
             keys = List.of("test-sale");
@@ -59,14 +68,14 @@ public class ExternalMsg {
         }
         boolean changed = false;
         for (String key : keys) {
-            if (messages.contains(key)) {
-                messages.set(key, null);
+            if (loaded.contains(key)) {
+                loaded.set(key, null);
                 changed = true;
             }
         }
         if (changed) {
             try {
-                messages.save(file);
+                loaded.save(file);
             } catch (IOException exception) {
                 throw new IllegalStateException(other.raw("external-message-update-failed", Map.of("resource", resource)), exception);
             }

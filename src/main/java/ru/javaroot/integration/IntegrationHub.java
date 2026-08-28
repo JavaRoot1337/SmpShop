@@ -1,5 +1,7 @@
 package ru.javaroot.integration;
 
+import org.bukkit.Material;
+import org.bukkit.configuration.file.YamlConfiguration;
 import ru.javaroot.config.Cfg;
 import ru.javaroot.config.LoggerLoc;
 import ru.javaroot.config.OtherMsg;
@@ -24,7 +26,8 @@ public class IntegrationHub {
     private final Cfg cfg;
     private final OtherMsg other;
     private final LoggerLoc loggerLoc;
-    private final BoundedHttp http;
+    private volatile BoundedHttp http;
+    private final Map<UUID, String> webhookUrls = new ConcurrentHashMap<>();
     private final Map<UUID, DiscordWebhook> discordWebhooks = new ConcurrentHashMap<>();
     private TelegramBot telegram;
 
@@ -57,8 +60,10 @@ public class IntegrationHub {
 
     public void loadWebhooks(Map<UUID, String> saved) {
         discordWebhooks.clear();
+        webhookUrls.clear();
         saved.forEach((playerId, webhook) -> {
             if (DiscordWebhook.isValid(webhook)) {
+                webhookUrls.put(playerId, webhook);
                 discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other, loggerLoc, http));
             }
         });
@@ -70,6 +75,7 @@ public class IntegrationHub {
             telegram = null;
         }
         discordWebhooks.clear();
+        webhookUrls.clear();
     }
 
     public void reload(Sched sched) {
@@ -77,6 +83,11 @@ public class IntegrationHub {
             telegram.stop();
             telegram = null;
         }
+        http = new BoundedHttp(cfg.httpMaxConcurrent(), cfg.httpConnectTimeoutSeconds(),
+                cfg.httpResponseLimitBytes());
+        discordWebhooks.clear();
+        webhookUrls.forEach((playerId, webhook) -> discordWebhooks.put(playerId,
+                new DiscordWebhook(logger, webhook, discordMessages, other, loggerLoc, http)));
         start(sched);
     }
 
@@ -92,6 +103,7 @@ public class IntegrationHub {
             return CompletableFuture.completedFuture(false);
         }
         return webhooks.save(playerId, webhook).thenApply(ignored -> {
+            webhookUrls.put(playerId, webhook);
             discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other, loggerLoc, http));
             return true;
         });
@@ -113,5 +125,20 @@ public class IntegrationHub {
         loggerLoc.reload();
         telegramMessages.reload();
         discordMessages.reload();
+    }
+
+    public MessageState messageState() {
+        return new MessageState(loggerLoc.snapshot(), telegramMessages.snapshot(), discordMessages.snapshot());
+    }
+
+    public void restoreMessages(MessageState state) {
+        loggerLoc.restore(state.loggerNames());
+        telegramMessages.restore(state.telegram());
+        discordMessages.restore(state.discord());
+    }
+
+    public record MessageState(Map<Material, String> loggerNames,
+                               YamlConfiguration telegram,
+                               YamlConfiguration discord) {
     }
 }
