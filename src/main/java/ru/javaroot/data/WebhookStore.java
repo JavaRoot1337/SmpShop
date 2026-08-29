@@ -1,4 +1,3 @@
-// code team-dev
 package ru.javaroot.data;
 
 import java.sql.PreparedStatement;

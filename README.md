@@ -8,7 +8,7 @@ SmpShop — магазины игроков на обычных сундуках
 - хранилище: SQLite
 - публичный API: v1
 
-Spigot и CraftBukkit без Paper API не поддерживаются. Краткая инструкция для администратора находится в [READMERU.md](READMERU.md).
+Spigot и CraftBukkit без Paper API не поддерживаются.
 
 ## Установка
 
@@ -219,7 +219,6 @@ if (api == null) {
 }
 
 api.awaitReady().thenRun(() -> {
-    // API готов
 });
 ```
 
