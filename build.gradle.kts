@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "ru.javaroot"
-version = "1.1.0"
+version = "1.0"
 val pluginVersion = version
 val sqliteNativePlatforms = listOf(
     "Linux/x86_64",
