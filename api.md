@@ -1,28 +1,28 @@
 # SmpShop API
 
-Руководство по интеграции стороннего плагина с SmpShop API v1.
+Guide to integrating a third-party plugin with the SmpShop API v1.
 
-API находится в основном JAR плагина SmpShop. Отдельный API-плагин устанавливать не нужно. Сервис доступен через Bukkit `ServicesManager`.
+The API is included in the main SmpShop JAR. No separate API plugin is required. The service is available through Bukkit's `ServicesManager`.
 
-## Что доступно через API
+## Available through the API
 
-- чтение магазинов по ID, координатам и UUID владельца;
-- чтение баланса игрока;
-- начисление и списание руды;
-- перевод руды между двумя игроками;
-- создание, изменение цены и удаление магазинов;
-- открытие меню баланса и списка магазинов;
-- события изменения баланса, магазинов и покупок;
-- добавление комиссий к покупке или отмена покупки до списания оплаты.
+- read shops by ID, coordinates, and owner UUID;
+- read a player's balance;
+- add and deduct ore;
+- transfer ore between two players;
+- create shops, change prices, and remove shops;
+- open the balance and shop list menus;
+- receive balance, shop, and purchase events;
+- add purchase fees or cancel a purchase before payment is deducted.
 
-API использует два типа валюты:
+The API uses two currency types:
 
 - `CurrencyType.DIAMOND_ORE`;
 - `CurrencyType.DEEPSLATE_DIAMOND_ORE`.
 
-## Подключение плагина-потребителя
+## Consumer plugin setup
 
-Добавьте SmpShop как обязательную зависимость в `plugin.yml`:
+Add SmpShop as a required dependency in `plugin.yml`:
 
 ```yaml
 name: MyPlugin
@@ -32,7 +32,7 @@ api-version: '1.21.11'
 depend: [SmpShop]
 ```
 
-В проекте-потребителе API можно подключить из JAR SmpShop как compile-only зависимость:
+In the consumer project, add the API from the SmpShop JAR as a compile-only dependency:
 
 ```kotlin
 dependencies {
@@ -40,11 +40,11 @@ dependencies {
 }
 ```
 
-Плагин SmpShop должен находиться в папке `plugins` рядом с вашим плагином. Не добавляйте SmpShop внутрь своего JAR и не устанавливайте тестовый `SmpShopApiConsumer`: это только пример потребителя API.
+The SmpShop plugin must be in the `plugins` folder alongside your plugin. Do not bundle SmpShop inside your JAR or install the test `SmpShopApiConsumer`: it is only an API consumer example.
 
-## Получение сервиса
+## Getting the service
 
-Получите сервис в `onEnable`:
+Get the service in `onEnable`:
 
 ```java
 import org.bukkit.NamespacedKey;
@@ -59,7 +59,7 @@ public class MyPlugin extends JavaPlugin {
     public void onEnable() {
         shopApi = getServer().getServicesManager().load(SmpShopApi.class);
         if (shopApi == null) {
-            getLogger().severe("API SmpShop недоступен");
+            getLogger().severe("SmpShop API is unavailable");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
@@ -69,132 +69,132 @@ public class MyPlugin extends JavaPlugin {
 }
 ```
 
-Проверьте версию перед использованием API:
+Check the version before using the API:
 
 ```java
 if (shopApi.version() != SmpShopApi.VERSION) {
-    getLogger().severe("Неподдерживаемая версия API SmpShop: " + shopApi.version());
+    getLogger().severe("Unsupported SmpShop API version: " + shopApi.version());
     getServer().getPluginManager().disablePlugin(this);
     return;
 }
 ```
 
-Сервис регистрируется до завершения загрузки SQLite. Поэтому сразу после получения сервиса API может быть ещё не готов к операциям.
+The service is registered before SQLite finishes loading. Therefore, the API may not be ready for operations immediately after you obtain the service.
 
-## Состояние и готовность
+## State and readiness
 
-Состояние доступно через `state()`:
+The state is available through `state()`:
 
-| Состояние | Значение |
+| State | Meaning |
 | --- | --- |
-| `STARTING` | плагин загружает базу и магазины |
-| `READY` | API принимает операции |
-| `FAILED` | запуск базы или загрузка данных завершились ошибкой |
-| `SHUTTING_DOWN` | плагин останавливается |
-| `STOPPED` | плагин остановлен |
+| `STARTING` | the plugin is loading the database and shops |
+| `READY` | the API accepts operations |
+| `FAILED` | database startup or data loading failed |
+| `SHUTTING_DOWN` | the plugin is shutting down |
+| `STOPPED` | the plugin has stopped |
 
-Для ожидания используйте `awaitReady()`:
+Use `awaitReady()` to wait:
 
 ```java
 shopApi.awaitReady().thenRun(() -> {
-    // API готов к работе
+    // API is ready
     addReward(playerId, 5);
 }).exceptionally(error -> {
-    getLogger().warning("API SmpShop не перешёл в состояние готовности: " + error.getMessage());
+    getLogger().warning("SmpShop API did not become ready: " + error.getMessage());
     return null;
 });
 ```
 
-Не вызывайте Bukkit API из этого callback без возврата на нужный серверный scheduler. Поток завершения `CompletionStage` не является частью контракта API.
+Do not call the Bukkit API from this callback without returning to the appropriate server scheduler. The `CompletionStage` completion thread is not part of the API contract.
 
-Если вызвать мутацию до готовности, она вернёт `ApiStatus.NOT_READY`. Метод `balance(UUID)` в этом случае завершится исключением `CompletionStage`.
+If you call a mutation before the API is ready, it returns `ApiStatus.NOT_READY`. In this case, `balance(UUID)` completes with a `CompletionStage` exception.
 
-## Общие правила операций
+## General operation rules
 
-Все изменяющие запросы содержат:
+All mutating requests contain:
 
-- `UUID operationId` - уникальный идентификатор операции;
-- `NamespacedKey source` - источник операции, обычно namespace и ключ вашего плагина.
+- `UUID operationId` - a unique operation identifier;
+- `NamespacedKey source` - the operation source, usually your plugin's namespace and key.
 
-Создавайте новый `operationId` для каждой новой операции:
+Create a new `operationId` for every new operation:
 
 ```java
 NamespacedKey source = new NamespacedKey(this, "daily_reward");
 UUID operationId = UUID.randomUUID();
 ```
 
-Повтор того же запроса с теми же `operationId` и `source` не применяет изменение второй раз. Это позволяет безопасно повторить запрос после сетевой или серверной ошибки.
+Repeating the same request with the same `operationId` and `source` does not apply the change a second time. This lets you safely retry a request after a network or server error.
 
-Не используйте один `operationId` для разных действий. Если для уже записанной операции передать другие параметры, API вернёт `CONFLICT`.
+Do not use one `operationId` for different actions. If you pass different parameters for an operation that is already recorded, the API returns `CONFLICT`.
 
-API не проверяет права игрока. Если операцию запускает команда или GUI другого плагина, проверяйте permissions самостоятельно.
+The API does not check player permissions. If an operation is started by another plugin's command or GUI, check permissions yourself.
 
-## Чтение магазинов
+## Reading shops
 
-### Поиск по ID
+### Lookup by ID
 
 ```java
 Optional<ShopSnapshot> shop = shopApi.shop(42L);
 
 shop.ifPresent(value -> {
-    getLogger().info("Владелец магазина: " + value.ownerName());
-    getLogger().info("Цена: " + value.price());
+    getLogger().info("Shop owner: " + value.ownerName());
+    getLogger().info("Price: " + value.price());
 });
 ```
 
-### Поиск по координатам
+### Lookup by coordinates
 
 ```java
 ShopPosition position = new ShopPosition(world.getUID(), x, y, z);
 Optional<ShopSnapshot> shop = shopApi.shop(position);
 ```
 
-`ShopPosition` содержит UUID мира и координаты блока. Для двойного сундука используйте координаты любой зарегистрированной половины.
+`ShopPosition` contains the world UUID and block coordinates. For a double chest, use the coordinates of either registered half.
 
-### Магазины игрока
+### Player shops
 
 ```java
 List<ShopSnapshot> shops = shopApi.shops(ownerId);
 ```
 
-Список возвращается как неизменяемый snapshot. Он не открывает сундук и не телепортирует игрока.
+The list is returned as an immutable snapshot. It does not open the chest or teleport the player.
 
 ### ShopSnapshot
 
-`ShopSnapshot` содержит:
+`ShopSnapshot` contains:
 
-| Метод | Значение |
+| Method | Meaning |
 | --- | --- |
-| `id()` | ID магазина |
-| `ownerId()` | UUID владельца |
-| `ownerName()` | имя владельца на момент регистрации |
-| `first()` | первая позиция сундука |
-| `second()` | вторая позиция двойного сундука или `null` |
-| `price()` | цена товарного стека |
-| `earnedTotal()` | общий заработок |
-| `soldSlots()` | число проданных товарных слотов |
-| `soldItems()` | число проданных предметов |
-| `createdAt()` | время создания в миллисекундах Unix |
+| `id()` | shop ID |
+| `ownerId()` | owner UUID |
+| `ownerName()` | owner name at registration time |
+| `first()` | the first chest position |
+| `second()` | the second double-chest position or `null` |
+| `price()` | item stack price |
+| `earnedTotal()` | total earnings |
+| `soldSlots()` | number of sold item slots |
+| `soldItems()` | number of items sold |
+| `createdAt()` | creation time in Unix milliseconds |
 
-Snapshot не обновляется автоматически. Для актуальных данных вызовите `shop(id)` или `shops(ownerId)` ещё раз.
+The snapshot is not updated automatically. Call `shop(id)` or `shops(ownerId)` again to get current data.
 
-## Баланс
+## Balance
 
-### Чтение баланса
+### Reading the balance
 
 ```java
 shopApi.balance(playerId).thenAccept(balance -> {
     CurrencyAmounts amounts = balance.amounts();
-    getLogger().info("Алмазная руда: " + amounts.diamondOre());
-    getLogger().info("Алмазная руда из глубинного сланца: " + amounts.deepslateDiamondOre());
+    getLogger().info("Diamond ore: " + amounts.diamondOre());
+    getLogger().info("Deepslate diamond ore: " + amounts.deepslateDiamondOre());
 });
 ```
 
-`balance(UUID)` возвращает `CompletionStage<BalanceSnapshot>`, потому что чтение выполняется через SQLite.
+`balance(UUID)` returns `CompletionStage<BalanceSnapshot>` because the read is performed through SQLite.
 
-### Изменение баланса
+### Changing the balance
 
-Положительное значение начисляет руду, отрицательное списывает:
+A positive value adds ore; a negative value deducts it:
 
 ```java
 shopApi.changeBalance(new BalanceChange(
@@ -205,18 +205,18 @@ shopApi.changeBalance(new BalanceChange(
         5
 )).thenAccept(result -> {
     if (!result.successful()) {
-        getLogger().warning("Изменение баланса отклонено: " + result.status());
+        getLogger().warning("Balance change rejected: " + result.status());
     }
 });
 ```
 
-Нулевое значение недопустимо. Списание больше текущего баланса вернёт `INSUFFICIENT_FUNDS`. Переполнение баланса вернёт `CONFLICT`.
+A zero value is invalid. Deducting more than the current balance returns `INSUFFICIENT_FUNDS`. Balance overflow returns `CONFLICT`.
 
-Если игрок в этот момент редактирует баланс через игровое меню, операция вернёт `BUSY`.
+If the player is editing the balance through the in-game menu at that moment, the operation returns `BUSY`.
 
-### Перевод между игроками
+### Transfer between players
 
-`transferBalance` переводит положительное количество одной валюты атомарно:
+`transferBalance` atomically transfers a positive amount of one currency:
 
 ```java
 shopApi.transferBalance(new BalanceTransfer(
@@ -234,22 +234,22 @@ shopApi.transferBalance(new BalanceTransfer(
 });
 ```
 
-Перевод самому себе и перевод с недостаточным балансом не выполняются.
+Transfers to yourself and transfers with insufficient funds are rejected.
 
 ### BalanceResult
 
-| Поле | Значение |
+| Field | Meaning |
 | --- | --- |
-| `status()` | результат операции |
-| `source()` | новый баланс игрока-источника, если он доступен |
-| `target()` | новый баланс получателя для перевода |
-| `successful()` | сокращение для проверки `status() == SUCCESS` |
+| `status()` | operation result |
+| `source()` | the source player's new balance, if available |
+| `target()` | the recipient's new balance for the transfer |
+| `successful()` | shorthand for checking `status() == SUCCESS` |
 
-## Управление магазинами
+## Managing shops
 
-API работает с физическими сундуками в мире. Оно не создаёт виртуальный магазин без блока.
+The API works with physical chests in the world. It does not create a virtual shop without a block.
 
-### Создание
+### Creating a shop
 
 ```java
 ShopPosition chest = new ShopPosition(world.getUID(), x, y, z);
@@ -265,27 +265,27 @@ shopApi.createShop(new ShopCreate(
 )).thenAccept(result -> {
     if (result.successful()) {
         ShopSnapshot created = result.shop();
-        getLogger().info("Создан магазин #" + created.id());
+        getLogger().info("Shop created #" + created.id());
     } else {
-        getLogger().warning("Не удалось создать магазин: " + result.status());
+        getLogger().warning("Failed to create shop: " + result.status());
     }
 });
 ```
 
-Поле `second` оставьте `null` для обычного сундука. Для двойного сундука передайте обе позиции в одном мире.
+Leave `second` as `null` for a single chest. For a double chest, pass both positions in the same world.
 
-Создание проверяет:
+Creation checks that:
 
-- что мир существует;
-- что по указанным координатам находится сундук;
-- что позиции соответствуют обычному или двойному сундуку;
-- что цена попадает в диапазон из `config.yml`;
-- что лимит владельца не превышен;
-- что сундук не занят другим магазином.
+- the world exists;
+- a chest is at the specified coordinates;
+- the positions match a single or double chest;
+- the price is within the range from `config.yml`;
+- the owner's limit has not been exceeded;
+- the chest is not occupied by another shop.
 
-Для операций API используется обычный лимит `shop.max-per-player`. Permission `smpshop.plus` на вызовы API автоматически не распространяется.
+API operations use the regular `shop.max-per-player` limit. The `smpshop.plus` permission does not automatically apply to API calls.
 
-### Изменение цены
+### Changing the price
 
 ```java
 shopApi.changePrice(new ShopPriceChange(
@@ -295,14 +295,14 @@ shopApi.changePrice(new ShopPriceChange(
         20
 )).thenAccept(result -> {
     if (result.successful()) {
-        getLogger().info("Новая цена: " + result.shop().price());
+        getLogger().info("New price: " + result.shop().price());
     }
 });
 ```
 
-Цена должна находиться между `shop.min-price` и `shop.max-price`.
+The price must be between `shop.min-price` and `shop.max-price.
 
-### Удаление
+### Removing a shop
 
 ```java
 shopApi.removeShop(new ShopRemove(
@@ -311,38 +311,38 @@ shopApi.removeShop(new ShopRemove(
         shopId
 )).thenAccept(result -> {
     if (result.status() == ApiStatus.BUSY) {
-        getLogger().warning("Магазин используется покупателем");
+        getLogger().warning("The shop is being used by a buyer");
     }
 });
 ```
 
-Удаление убирает регистрацию магазина, но не удаляет предметы из физического сундука.
+Removing a shop removes its registration but does not remove items from the physical chest.
 
-Операция вернёт `BUSY`, если магазин используется покупателем. Перед удалением API также вызывает `ShopRemovePrepareEvent`, поэтому другой плагин может отменить операцию.
+The operation returns `BUSY` if the shop is being used by a buyer. Before removal, the API also calls `ShopRemovePrepareEvent`, so another plugin can cancel the operation.
 
-## Открытие меню
+## Opening menus
 
-API может открыть стандартные меню SmpShop для игрока:
+The API can open SmpShop's standard menus for a player:
 
 ```java
 shopApi.openBalance(playerId).thenAccept(result -> {
     if (result.status() != ApiStatus.SUCCESS) {
-        getLogger().warning("Не удалось открыть баланс: " + result.status());
+        getLogger().warning("Failed to open balance: " + result.status());
     }
 });
 
 shopApi.openShopList(viewerId, ownerId).thenAccept(result -> {
     if (!result.successful()) {
-        getLogger().warning("Не удалось открыть список магазинов: " + result.status());
+        getLogger().warning("Failed to open shop list: " + result.status());
     }
 });
 ```
 
-Оба метода требуют, чтобы игрок был онлайн. Если игрок не найден, возвращается `NOT_FOUND`. Открытие выполняется через scheduler владельца сущности игрока.
+Both methods require the player to be online. If the player is not found, `NOT_FOUND` is returned. Opening is performed through the player's entity-owner scheduler.
 
-## События
+## Events
 
-Все события находятся в пакете `ru.javaroot.api.event`. Регистрируйте их обычным Bukkit-слушателем:
+All events are in the `ru.javaroot.api.event` package. Register them with a regular Bukkit listener:
 
 ```java
 public class MyPlugin extends JavaPlugin implements Listener {
@@ -353,30 +353,30 @@ public class MyPlugin extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onBalanceChanged(BalanceChangedEvent event) {
-        getLogger().info("Баланс изменён для игрока " + event.balance().playerId());
+        getLogger().info("Balance changed for player " + event.balance().playerId());
     }
 }
 ```
 
-### События изменения баланса и магазинов
+### Balance and shop change events
 
-| Событие | Когда вызывается |
+| Event | When it is called |
 | --- | --- |
-| `BalanceChangedEvent` | после успешного изменения или перевода баланса |
-| `ShopChangedEvent` | после создания, изменения цены или удаления магазина |
-| `ShopTransactionRolledBackEvent` | после отката незавершённой покупки |
+| `BalanceChangedEvent` | after a balance change or transfer succeeds |
+| `ShopChangedEvent` | after a shop is created, its price changes, or it is removed |
+| `ShopTransactionRolledBackEvent` | after an unfinished purchase is rolled back |
 
-`ShopChangedEvent.type()` принимает:
+`ShopChangedEvent.type()` accepts:
 
 - `CREATED`;
 - `PRICE_CHANGED`;
 - `REMOVED`.
 
-`ShopTransactionRolledBackEvent` содержит `transactionId()`, `shopId()` и `buyerId()`.
+`ShopTransactionRolledBackEvent` contains `transactionId()`, `shopId()`, and `buyerId()`.
 
-### Подготовка создания и удаления
+### Preparing creation and removal
 
-`ShopCreatePrepareEvent` и `ShopRemovePrepareEvent` реализуют `Cancellable`. Используйте их для проверки собственных правил:
+`ShopCreatePrepareEvent` and `ShopRemovePrepareEvent` implement `Cancellable`. Use them to enforce your own rules:
 
 ```java
 @EventHandler
@@ -387,11 +387,11 @@ public void onShopRemove(ShopRemovePrepareEvent event) {
 }
 ```
 
-Отмена события возвращает результат `CONFLICT`.
+Cancelling the event returns `CONFLICT`.
 
-### Подготовка покупки
+### Preparing a purchase
 
-`ShopPurchasePrepareEvent` вызывается до списания оплаты и изменения физического сундука. Событие можно отменить:
+`ShopPurchasePrepareEvent` is called before payment is deducted and the physical chest is changed. The event can be cancelled:
 
 ```java
 @EventHandler
@@ -402,7 +402,7 @@ public void onPurchasePrepare(ShopPurchasePrepareEvent event) {
 }
 ```
 
-В событии доступны:
+The event provides:
 
 - `transactionId()`;
 - `buyerId()`;
@@ -410,9 +410,9 @@ public void onPurchasePrepare(ShopPurchasePrepareEvent event) {
 - `basePayment()`;
 - `adjustments()`.
 
-### Комиссии и наценки
+### Fees and surcharges
 
-Добавляйте корректировку через уникальный `NamespacedKey`:
+Add an adjustment through a unique `NamespacedKey`:
 
 ```java
 @EventHandler
@@ -424,31 +424,31 @@ public void onPurchasePrepare(ShopPurchasePrepareEvent event) {
     );
 
     if (!added) {
-        getLogger().warning("Ключ корректировки уже используется");
+        getLogger().warning("The adjustment key is already in use");
     }
 }
 ```
 
-Типы корректировок:
+Adjustment types:
 
-| Тип | Результат |
+| Type | Result |
 | --- | --- |
-| `SELLER_DEDUCTION` | удерживает руду из выплаты продавцу |
-| `BUYER_SURCHARGE` | добавляет руду к оплате покупателя |
+| `SELLER_DEDUCTION` | withholds ore from the seller's payout |
+| `BUYER_SURCHARGE` | adds ore to the buyer's payment |
 
-`CurrencyAmounts` не может содержать отрицательные значения. Для `PurchaseAdjustment` сумма не может быть пустой. Один ключ можно добавить только один раз. Если продавцу нечего удержать или покупателю не хватает средств на итоговую сумму, покупка не проходит.
+`CurrencyAmounts` cannot contain negative values. A `PurchaseAdjustment` amount cannot be empty. A key can be added only once. If there is nothing to withhold from the seller or the buyer cannot cover the total amount, the purchase is rejected.
 
-### Завершение покупки
+### Completing a purchase
 
-`ShopPurchaseCompletedEvent` вызывается после записи успешной продажи в базу:
+`ShopPurchaseCompletedEvent` is called after the successful sale is recorded in the database:
 
 ```java
 @EventHandler
 public void onPurchaseCompleted(ShopPurchaseCompletedEvent event) {
     getLogger().info(
-            "Транзакция " + event.transactionId()
-                    + ", магазин " + event.shop().id()
-                    + ", исходная цена " + event.originalPrice()
+            "Transaction " + event.transactionId()
+                    + ", shop " + event.shop().id()
+                    + ", original price " + event.originalPrice()
     );
 
     CurrencyAmounts buyerPayment = event.buyerPayment();
@@ -456,41 +456,41 @@ public void onPurchaseCompleted(ShopPurchaseCompletedEvent event) {
 }
 ```
 
-Событие содержит исходную цену, фактическую оплату покупателя, выплату продавцу и применённые корректировки.
+The event contains the original price, the buyer's actual payment, the seller's payout, and the applied adjustments.
 
-Используйте `ShopTransactionRolledBackEvent` для обработки внешних действий, которые нужно компенсировать после отката. Не выдавайте награду только по `ShopPurchasePrepareEvent`: на этом этапе покупка ещё может быть отменена.
+Use `ShopTransactionRolledBackEvent` to handle external actions that must be compensated after a rollback. Do not grant a reward based only on `ShopPurchasePrepareEvent`: the purchase can still be cancelled at that stage.
 
-## Результаты и статусы
+## Results and statuses
 
-Изменяющие методы возвращают `BalanceResult`, `ShopResult` или `OpenResult`. У них есть метод `successful()`.
+Mutating methods return `BalanceResult`, `ShopResult`, or `OpenResult`. They provide the `successful()` method.
 
-| Статус | Значение |
+| Status | Meaning |
 | --- | --- |
-| `SUCCESS` | операция выполнена |
-| `NOT_READY` | API ещё загружается или не смогло запуститься |
-| `NOT_FOUND` | игрок, мир, сундук или магазин не найден |
-| `BUSY` | баланс или магазин занят другой операцией |
-| `LIMIT_REACHED` | достигнут лимит магазинов владельца |
-| `INSUFFICIENT_FUNDS` | недостаточно руды |
-| `CONFLICT` | операция конфликтует с текущим состоянием или была отменена событием |
-| `INVALID_INPUT` | недопустимые параметры запроса |
-| `SHUTTING_DOWN` | SmpShop завершает работу |
+| `SUCCESS` | the operation succeeded |
+| `NOT_READY` | the API is still loading or failed to start |
+| `NOT_FOUND` | the player, world, chest, or shop was not found |
+| `BUSY` | the balance or shop is busy with another operation |
+| `LIMIT_REACHED` | the owner's shop limit has been reached |
+| `INSUFFICIENT_FUNDS` | insufficient ore |
+| `CONFLICT` | the operation conflicts with the current state or was cancelled by an event |
+| `INVALID_INPUT` | invalid request parameters |
+| `SHUTTING_DOWN` | SmpShop is shutting down |
 
-Future может завершиться исключением при ошибке SQLite, остановке scheduler или другой системной ошибке. Обычный отказ операции возвращается через статус и не должен обрабатываться как исключение.
+A future may complete exceptionally because of an SQLite error, scheduler shutdown, or another system error. A normal operation rejection is returned through its status and should not be handled as an exception.
 
-## Потоки и жизненный цикл
+## Threads and lifecycle
 
-- Методы API можно вызывать из любого потока.
-- Чтение баланса и изменяющие операции используют асинхронное хранилище.
-- Операции с сундуками выполняются на owning region.
-- Открытие инвентарей выполняется на scheduler игрока.
-- Поток завершения `CompletionStage` не гарантируется.
-- Bukkit-события не заменяют проверку результата операции.
-- Перед остановкой SmpShop новые операции могут вернуть `SHUTTING_DOWN`.
+- API methods can be called from any thread.
+- Balance reads and mutating operations use asynchronous storage.
+- Chest operations run on the owning region.
+- Inventory opening runs on the player's scheduler.
+- The `CompletionStage` completion thread is not guaranteed.
+- Bukkit events do not replace checking the operation result.
+- Before SmpShop stops, new operations may return `SHUTTING_DOWN`.
 
-Не храните `Player` как долгоживущую ссылку. Передавайте UUID и получайте актуальный объект игрока только на нужном scheduler.
+Do not keep `Player` as a long-lived reference. Pass a UUID and obtain the current player object only on the appropriate scheduler.
 
-## Полный минимальный пример
+## Complete minimal example
 
 ```java
 import org.bukkit.NamespacedKey;
@@ -528,22 +528,22 @@ public class MyPlugin extends JavaPlugin implements Listener {
                     CurrencyType.DIAMOND_ORE,
                     5
             )).thenAccept(result ->
-                    getLogger().info("Результат начисления награды: " + result.status()));
+                    getLogger().info("Reward grant result: " + result.status()));
         });
     }
 
     @EventHandler
     public void onPurchaseCompleted(ShopPurchaseCompletedEvent event) {
-        getLogger().info("Продажа завершена: " + event.transactionId());
+        getLogger().info("Sale completed: " + event.transactionId());
     }
 }
 ```
 
-## Пакеты API
+## API packages
 
-Основные классы находятся в:
+The main classes are in:
 
-- `ru.javaroot.api` - сервис, запросы, snapshots, результаты и типы валюты;
-- `ru.javaroot.api.event` - Bukkit-события API.
+- `ru.javaroot.api` - the service, requests, snapshots, results, and currency types;
+- `ru.javaroot.api.event` - API Bukkit events:
 
-Текущая версия публичного интерфейса: `SmpShopApi.VERSION == 1`.
+The current public interface version is `SmpShopApi.VERSION == 1`

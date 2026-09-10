@@ -1,169 +1,169 @@
 # SmpShop
 
-SmpShop превращает обычные сундуки в магазины игроков. Продавец ставит цену на товарный стек, покупатель открывает сундук, кладёт оплату и забирает выбранный товар. Оплата ведётся двумя видами алмазной руды.
+SmpShop turns ordinary chests into player-run shops. The seller sets a price for an item stack, the buyer opens the chest, places the payment, and takes the selected item. Payment uses two types of diamond ore.
 
-Плагин рассчитан на Paper, Folia и Canvas. Поддерживаются серверы от `1.21.11` до `26.2`.
+The plugin is designed for Paper, Folia, and Canvas. Servers from `1.21.11` through `26.2` are supported.
 
-Для разработчиков есть отдельное [руководство по API](api.md).
+A separate [API guide](api.md) is available for developers.
 
-## Что умеет плагин
+## Features
 
-- создавать магазины на обычных и двойных сундуках;
-- продавать любые предметы, которые лежат в сундуке;
-- принимать `DIAMOND_ORE` и `DEEPSLATE_DIAMOND_ORE` как единую валюту;
-- показывать список магазинов с владельцем, координатами, ценой и статистикой продаж;
-- хранить баланс руды игрока в отдельном меню;
-- защищать магазины от разрушения, взрывов, поршней, воронок и перемещения предметов;
-- уведомлять продавца о продажах в игре, при следующем входе, в Telegram и в Discord;
-- настраивать команды, сообщения, звуки, лимиты и интеграции через YAML-файлы;
-- сохранять магазины, балансы и незавершённые сделки в SQLite.
+- create shops on single and double chests;
+- sell any items stored in the chest;
+- accept `DIAMOND_ORE` and `DEEPSLATE_DIAMOND_ORE` as one currency;
+- show a shop list with the owner, coordinates, price, and sales statistics;
+- store a player's ore balance in a separate menu;
+- protect shops from breaking, explosions, pistons, hoppers, and item movement;
+- notify the seller about sales in-game, on the next login, through Telegram, and through Discord;
+- configure commands, messages, sounds, limits, and integrations through YAML files;
+- save shops, balances, and unfinished transactions in SQLite.
 
-## Валюта
+## Currency
 
-В магазине используются два материала:
+The shop uses two materials:
 
-| Материал | Обозначение в плагине |
+| Material | Plugin label |
 | --- | --- |
-| `DIAMOND_ORE` | алмазная руда |
-| `DEEPSLATE_DIAMOND_ORE` | глубинная алмазная руда |
+| `DIAMOND_ORE` | diamond ore |
+| `DEEPSLATE_DIAMOND_ORE` | deepslate diamond ore |
 
-Оба материала считаются одной валютой и могут использоваться вместе в одной оплате. Другие предметы валютой не считаются.
+Both materials count as one currency and can be combined in a single payment. Other items do not count as currency.
 
-В текстах плагина валюта обозначается как `АР`.
+In plugin text, the currency is displayed as `АР`.
 
-## Быстрый старт для игрока
+## Quick start for players
 
-### Создание магазина
+### Creating a shop
 
-1. Положите товар в обычный сундук.
-2. Выполните `/smpshop set <цена>`.
-3. В течение отведённого времени нажмите ПКМ по этому сундуку.
+1. Put the item in a single chest.
+2. Run `/smpshop set <price>`.
+3. Right-click the chest within the allowed time.
 
-Например:
+For example:
 
 ```text
 /smpshop set 12
 ```
 
-Цена назначается на весь стек товара в выбранном слоте. Если в слоте лежит 32 предмета, покупатель заберёт все 32 предмета за указанную цену `12 АР`.
+The price applies to the entire item stack in the selected slot. If the slot contains 32 items, the buyer takes all 32 items for the listed price of `12 АР`.
 
-Двойной сундук регистрируется как один магазин. Если сундук уже участвует в магазине, поставить на него второй магазин нельзя.
+A double chest is registered as one shop. A chest that already belongs to a shop cannot be registered again.
 
-По умолчанию цена может быть от `1` до `2304 АР`. Обычный игрок может создать до `10` магазинов, а право `smpshop.plus` увеличивает лимит до `50`.
+By default, the price can range from `1` to `2304 АР`. A regular player can create up to `10` shops; the `smpshop.plus` permission raises the limit to `50`.
 
-### Покупка
+### Buying
 
-1. Нажмите ПКМ по чужому магазину.
-2. Положите оплату в отмеченные слоты меню.
-3. Нажмите на нужный товар.
-4. Переместите полученный товар в свой инвентарь.
+1. Right-click another player's shop.
+2. Place the payment in the marked menu slots.
+3. Click the item you want.
+4. Move the received item into your inventory.
 
-Во время покупки физический сундук временно блокируется для владельца и других покупателей. Это не позволяет двум игрокам одновременно забрать один и тот же товар.
+During a purchase, the physical chest is temporarily locked for the owner and other buyers. This prevents two players from taking the same item at the same time.
 
-Если товар изменился, места в инвентаре недостаточно, оплаты не хватает или меню закрыто до завершения покупки, сделка отменяется. Товар и оплата возвращаются в соответствующее хранилище.
+If the item changed, there is not enough inventory space, the payment is insufficient, or the menu is closed before the purchase finishes, the transaction is cancelled. The item and payment are returned to their respective storage.
 
-### Баланс
+### Balance
 
-Команда `/smpshop balance` открывает меню баланса. В нём можно:
+The `/smpshop balance` command opens the balance menu. It lets you:
 
-- посмотреть накопленную алмазную и глубинную алмазную руду;
-- забрать руду в инвентарь;
-- вернуть руду обратно на баланс, если она ещё находится в меню;
-- переключаться между страницами баланса.
+- view your accumulated diamond and deepslate diamond ore;
+- take ore into your inventory;
+- return ore to the balance while it is still in the menu;
+- switch between balance pages.
 
-В меню принимаются только два вида руды, перечисленные в разделе «Валюта».
+The menu accepts only the two ore types listed in the “Currency” section.
 
-### Просмотр магазинов
+### Viewing shops
 
-`/smpshop list` открывает список собственных магазинов. В карточке магазина отображаются:
+`/smpshop list` opens a list of your shops. Each shop card shows:
 
-- номер магазина;
-- владелец;
-- координаты сундука;
-- цена одного товарного стека;
-- заработок магазина;
-- количество проданных предметов.
+- the shop ID;
+- the owner;
+- the chest coordinates;
+- the price of one item stack;
+- the shop's earnings;
+- the number of items sold.
 
-Команда не телепортирует игрока и не открывает сундук удалённо. Она только показывает информацию о зарегистрированных магазинах.
+The command does not teleport the player or open the chest remotely. It only shows information about registered shops.
 
-### Удаление магазина
+### Removing a shop
 
-Чтобы удалить свой магазин:
+To remove your shop:
 
-1. Выполните `/smpshop delete`.
-2. Нажмите ПКМ по своему сундуку.
+1. Run `/smpshop delete`.
+2. Right-click your chest.
 
-Регистрация магазина будет удалена, но содержимое сундука останется на месте.
+The shop registration is removed, but the chest contents remain in place.
 
-## Команды
+## Commands
 
-Основная команда: `/smpshop`. Алиас: `/shop`.
+Main command: `/smpshop`. Alias: `/shop`.
 
-| Команда | Что делает | Право |
+| Command | Action | Permission |
 | --- | --- | --- |
-| `/smpshop` или `/smpshop help` | показывает справку | `smpshop.use` |
-| `/smpshop set <цена>` | начинает создание магазина | `smpshop.use` |
-| `/smpshop balance` | открывает баланс руды | `smpshop.use`, `smpshop.balance` |
-| `/smpshop list` | показывает свои магазины | `smpshop.use` |
-| `/smpshop list <игрок>` | показывает магазины другого игрока | `smpshop.use`, `smpshop.admin.list` |
-| `/smpshop delete` | начинает удаление своего магазина | `smpshop.use` |
-| `/smpshop remove` | начинает удаление любого магазина | `smpshop.use`, `smpshop.admin.remove` |
-| `/smpshop link tg` | выдаёт код или ссылку привязки Telegram | `smpshop.use`, `smpshop.link` |
-| `/smpshop link ds webhook <url>` | сохраняет личный Discord webhook | `smpshop.use`, `smpshop.link` |
-| `/smpshop reload` | перечитывает настройки и сообщения | `smpshop.use`, `smpshop.admin.reload` |
+| `/smpshop` or `/smpshop help` | show help | `smpshop.use` |
+| `/smpshop set <price>` | start creating a shop | `smpshop.use` |
+| `/smpshop balance` | open the ore balance | `smpshop.use`, `smpshop.balance` |
+| `/smpshop list` | show your shops | `smpshop.use` |
+| `/smpshop list <player>` | show another player's shops | `smpshop.use`, `smpshop.admin.list` |
+| `/smpshop delete` | start removing your shop | `smpshop.use` |
+| `/smpshop remove` | start removing any shop | `smpshop.use`, `smpshop.admin.remove` |
+| `/smpshop link tg` | issue a Telegram linking code or link | `smpshop.use`, `smpshop.link` |
+| `/smpshop link ds webhook <url>` | save a personal Discord webhook | `smpshop.use`, `smpshop.link` |
+| `/smpshop reload` | reload settings and messages | `smpshop.use`, `smpshop.admin.reload` |
 
-Все команды доступны только игрокам. Выполнение из консоли не поддерживается.
+All commands are available to players only. Console execution is not supported.
 
-## Права
+## Permissions
 
-| Право | Назначение | По умолчанию |
+| Permission | Purpose | Default |
 | --- | --- | --- |
-| `smpshop.use` | использование основной команды | всем игрокам |
-| `smpshop.balance` | открытие баланса | всем игрокам |
-| `smpshop.link` | привязка Telegram и Discord | всем игрокам |
-| `smpshop.plus` | увеличенный лимит магазинов | операторам |
-| `smpshop.admin.list` | просмотр магазинов другого игрока | операторам |
-| `smpshop.admin.remove` | удаление любого магазина | операторам |
-| `smpshop.admin.reload` | перезагрузка настроек и сообщений | операторам |
+| `smpshop.use` | use the main command | all players |
+| `smpshop.balance` | open the balance | all players |
+| `smpshop.link` | link Telegram and Discord | all players |
+| `smpshop.plus` | increased shop limit | operators |
+| `smpshop.admin.list` | view another player's shops | operators |
+| `smpshop.admin.remove` | remove any shop | operators |
+| `smpshop.admin.reload` | reload settings and messages | operators |
 
-## Установка на сервер
+## Server installation
 
-1. Поместите `SmpShop-1.0.jar` в папку `plugins`.
-2. Запустите сервер один раз.
-3. Откройте созданную папку `plugins/SmpShop`.
-4. Измените нужные параметры в `config.yml` и тексты в YAML-файлах сообщений.
-5. Выполните `/smpshop reload`.
+1. Put `SmpShop-1.0.jar` in the `plugins` folder.
+2. Start the server once.
+3. Open the created `plugins/SmpShop` folder.
+4. Change the required settings in `config.yml` and the text in the message YAML files.
+5. Run `/smpshop reload`.
 
-Для замены самого JAR нужен полный перезапуск сервера. `/smpshop reload` обновляет настройки, сообщения, звуки и интеграции, но не загружает новый код плагина.
+Replacing the JAR requires a full server restart. `/smpshop reload` updates settings, messages, sounds, and integrations, but it does not load new plugin code.
 
-### Совместимость
+### Compatibility
 
-| Сервер | Java |
+| Server | Java |
 | --- | --- |
-| Paper или Folia `1.21.11` | 21 |
-| Paper, Folia или Canvas `26.1+` | 25 |
+| Paper or Folia `1.21.11` | 21 |
+| Paper, Folia, or Canvas `26.1+` | 25 |
 
-Spigot и CraftBukkit без Paper API не поддерживаются.
+Spigot and CraftBukkit without the Paper API are not supported.
 
-## Настройка
+## Configuration
 
-Все настройки находятся в `plugins/SmpShop`.
+All settings are stored in `plugins/SmpShop`.
 
 ### `config.yml`
 
-| Раздел | Основные параметры |
+| Section | Main settings |
 | --- | --- |
-| `shop` | диапазон цен, лимит магазинов, размер меню и время установки сундука |
-| `storage` | имя SQLite-файла и таймаут операций |
-| `sounds.seller-sale` | звук продажи для продавца |
-| `sounds.buyer-purchase` | звук завершённой покупки для покупателя |
-| `notifications` | сохранение уведомлений для офлайн-продавцов и сообщение при входе |
-| `integrations.telegram` | Telegram Bot API и способ выдачи ссылки привязки |
-| `integrations.discord` | включение уведомлений через Discord webhook |
+| `shop` | price range, shop limit, menu size, and chest placement timeout |
+| `storage` | SQLite filename and operation timeout |
+| `sounds.seller-sale` | sale sound for the seller |
+| `sounds.buyer-purchase` | completed purchase sound for the buyer |
+| `notifications` | storing notifications for offline sellers and the join message |
+| `integrations.telegram` | Telegram Bot API and the linking method |
+| `integrations.discord` | enable notifications through a Discord webhook |
 
-Размер меню списка магазинов задаётся в `shop.menu-size`. Разрешены размеры `36` и `54` слота.
+The shop list menu size is set by `shop.menu-size`. Allowed sizes are `36` and `54` slots.
 
-Начальные значения лимитов:
+Default limit values:
 
 ```yaml
 shop:
@@ -175,25 +175,25 @@ shop:
   pending-placement-timeout-seconds: 60
 ```
 
-При перезагрузке YAML сначала проверяется. Если новая конфигурация содержит ошибку, плагин сохраняет предыдущие рабочие настройки.
+YAML is validated before it is reloaded. If the new configuration contains an error, the plugin keeps the previous working settings.
 
-### Файлы сообщений
+### Message files
 
-- `message.yml` содержит игровые сообщения, названия меню, подсказки и текст команд;
-- `message_other.yml` содержит технические сообщения об ошибках;
-- `message_tg.yml` содержит сообщения Telegram-бота;
-- `message_ds.yml` содержит сообщения Discord;
-- `logger_locate.yml` содержит названия предметов для внешних уведомлений.
+- `message.yml` contains in-game messages, menu names, hints, and command text;
+- `message_other.yml` contains technical error messages;
+- `message_tg.yml` contains Telegram bot messages;
+- `message_ds.yml` contains Discord messages;
+- `logger_locate.yml` contains item names for external notifications.
 
-В `message.yml` можно менять цвета через стандартные коды Minecraft, например `&b` или `&#FFFFFF`.
+In `message.yml`, you can change colors using standard Minecraft codes such as `&b` or `&#FFFFFF`.
 
-## Уведомления о продажах
+## Sale notifications
 
-### В игре
+### In-game
 
-Онлайн-продавец получает сообщение о продаже и звук. Если продавец был офлайн, плагин может сохранить сумму продаж и показать её при следующем входе.
+An online seller receives a sale message and sound. If the seller was offline, the plugin can save the sale amount and show it on the next login.
 
-Это настраивается в `config.yml`:
+This is configured in `config.yml`:
 
 ```yaml
 notifications:
@@ -201,61 +201,61 @@ notifications:
   join-message-enabled: true
 ```
 
-Баланс продавца сохраняется независимо от того, дошло ли уведомление.
+The seller's balance is saved regardless of whether the notification was delivered.
 
 ### Telegram
 
-1. Создайте бота через BotFather и получите токен.
-2. Включите `integrations.telegram.enabled`.
-3. Укажите `bot-token`.
-4. Укажите имя `user-bot` без символа `@`, если хотите выдавать ссылку на бота.
-5. Выполните `/smpshop reload`.
-6. В игре выполните `/smpshop link tg`.
-7. Перейдите по ссылке или отправьте боту полученный код.
+1. Create a bot through BotFather and obtain a token.
+2. Enable `integrations.telegram.enabled`.
+3. Set `bot-token`.
+4. Set the `user-bot` name without the `@` symbol if you want to issue a bot link.
+5. Run `/smpshop reload`.
+6. Run `/smpshop link tg` in-game.
+7. Follow the link or send the received code to the bot.
 
-Бот принимает команды `/start <код>` и `/code <код>`. Код одноразовый и действует ограниченное время. Telegram получает только уведомления о продажах.
+The bot accepts `/start <code>` and `/code <code>`. The code is single-use and expires after a limited time. Telegram receives sale notifications only.
 
-Если `referral-bot: true`, игрок получает ссылку вида `https://t.me/<bot>?start=<код>`. Если параметр выключен, плагин выдаёт одноразовый код для команды `/code`.
+If `referral-bot: true`, the player receives a link in the form `https://t.me/<bot>?start=<code>`. If the setting is disabled, the plugin issues a single-use code for `/code`.
 
 ### Discord
 
-1. Включите `integrations.discord.enabled`.
-2. Выполните в игре:
+1. Enable `integrations.discord.enabled`.
+2. Run in-game:
 
 ```text
 /smpshop link ds webhook <url>
 ```
 
-3. После сохранения webhook уведомления о продажах ваших магазинов будут отправляться в этот канал.
+3. After the webhook is saved, sale notifications for your shops are sent to this channel.
 
-Webhook хранится отдельно для каждого игрока. Повторная команда заменяет сохранённый адрес.
+A webhook is stored separately for each player. Running the command again replaces the saved address.
 
-Не публикуйте токен Telegram и Discord webhook в чате, Git или открытой документации.
+Do not publish the Telegram token or Discord webhook in chat, Git, or public documentation.
 
-## Хранение данных
+## Data storage
 
-По умолчанию плагин использует файл `plugins/SmpShop/shops.db`. В нём хранятся:
+By default, the plugin uses `plugins/SmpShop/shops.db`. It stores:
 
-- зарегистрированные магазины и их статистика;
-- балансы игроков;
-- история и состояние сделок;
-- отложенные уведомления;
-- привязки Telegram;
-- Discord webhook игроков.
+- registered shops and their statistics;
+- player balances;
+- transaction history and state;
+- pending notifications;
+- Telegram links;
+- player Discord webhooks.
 
-Удаление магазина не удаляет предметы из сундука. Сам сундук остаётся обычным игровым хранилищем.
+Removing a shop does not remove items from the chest. The chest remains a normal in-game storage.
 
-Если игрок вышел во время покупки или сервер остановился в неподходящий момент, плагин восстанавливает незавершённую сделку при следующем входе и не должен списывать оплату повторно.
+If a player leaves during a purchase or the server stops at an unsuitable moment, the plugin restores the unfinished transaction on the next login and should not charge the payment again.
 
-## Ограничения
+## Limitations
 
-- валюта фиксирована и не меняется через YAML;
-- цена задаётся отдельно для каждого магазина;
-- одновременно один магазин обслуживает одного покупателя;
-- список магазинов не открывает сундук удалённо;
-- удаление мира или файла мира не восстанавливает содержимое сундука из SQLite;
-- команда `/smpshop link max` присутствует в старой подсказке, но рабочей интеграции MAX в текущей версии нет.
+- the currency is fixed and cannot be changed through YAML;
+- the price is set separately for each shop;
+- each shop serves one buyer at a time;
+- the shop list does not open the chest remotely;
+- deleting a world or its world file does not restore chest contents from SQLite;
+- `/smpshop link max` appears in an old help message, but the current version has no working MAX integration.
 
-## Лицензия
+## License
 
 [MIT](LICENSE)
