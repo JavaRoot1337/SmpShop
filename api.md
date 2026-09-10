@@ -59,7 +59,7 @@ public class MyPlugin extends JavaPlugin {
     public void onEnable() {
         shopApi = getServer().getServicesManager().load(SmpShopApi.class);
         if (shopApi == null) {
-            getLogger().severe("SmpShop API is unavailable");
+            getLogger().severe("API SmpShop недоступен");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
@@ -73,7 +73,7 @@ public class MyPlugin extends JavaPlugin {
 
 ```java
 if (shopApi.version() != SmpShopApi.VERSION) {
-    getLogger().severe("Unsupported SmpShop API version: " + shopApi.version());
+    getLogger().severe("Неподдерживаемая версия API SmpShop: " + shopApi.version());
     getServer().getPluginManager().disablePlugin(this);
     return;
 }
@@ -100,7 +100,7 @@ shopApi.awaitReady().thenRun(() -> {
     // API готов к работе
     addReward(playerId, 5);
 }).exceptionally(error -> {
-    getLogger().warning("SmpShop API did not become ready: " + error.getMessage());
+    getLogger().warning("API SmpShop не перешёл в состояние готовности: " + error.getMessage());
     return null;
 });
 ```
@@ -137,8 +137,8 @@ API не проверяет права игрока. Если операцию �
 Optional<ShopSnapshot> shop = shopApi.shop(42L);
 
 shop.ifPresent(value -> {
-    getLogger().info("Shop owner: " + value.ownerName());
-    getLogger().info("Price: " + value.price());
+    getLogger().info("Владелец магазина: " + value.ownerName());
+    getLogger().info("Цена: " + value.price());
 });
 ```
 
@@ -185,8 +185,8 @@ Snapshot не обновляется автоматически. Для акту
 ```java
 shopApi.balance(playerId).thenAccept(balance -> {
     CurrencyAmounts amounts = balance.amounts();
-    getLogger().info("Diamond ore: " + amounts.diamondOre());
-    getLogger().info("Deepslate diamond ore: " + amounts.deepslateDiamondOre());
+    getLogger().info("Алмазная руда: " + amounts.diamondOre());
+    getLogger().info("Алмазная руда из глубинного сланца: " + amounts.deepslateDiamondOre());
 });
 ```
 
@@ -205,7 +205,7 @@ shopApi.changeBalance(new BalanceChange(
         5
 )).thenAccept(result -> {
     if (!result.successful()) {
-        getLogger().warning("Balance change rejected: " + result.status());
+        getLogger().warning("Изменение баланса отклонено: " + result.status());
     }
 });
 ```
@@ -265,9 +265,9 @@ shopApi.createShop(new ShopCreate(
 )).thenAccept(result -> {
     if (result.successful()) {
         ShopSnapshot created = result.shop();
-        getLogger().info("Created shop #" + created.id());
+        getLogger().info("Создан магазин #" + created.id());
     } else {
-        getLogger().warning("Shop creation failed: " + result.status());
+        getLogger().warning("Не удалось создать магазин: " + result.status());
     }
 });
 ```
@@ -295,7 +295,7 @@ shopApi.changePrice(new ShopPriceChange(
         20
 )).thenAccept(result -> {
     if (result.successful()) {
-        getLogger().info("New price: " + result.shop().price());
+        getLogger().info("Новая цена: " + result.shop().price());
     }
 });
 ```
@@ -311,7 +311,7 @@ shopApi.removeShop(new ShopRemove(
         shopId
 )).thenAccept(result -> {
     if (result.status() == ApiStatus.BUSY) {
-        getLogger().warning("Shop is being used by a buyer");
+        getLogger().warning("Магазин используется покупателем");
     }
 });
 ```
@@ -327,13 +327,13 @@ API может открыть стандартные меню SmpShop для и�
 ```java
 shopApi.openBalance(playerId).thenAccept(result -> {
     if (result.status() != ApiStatus.SUCCESS) {
-        getLogger().warning("Could not open balance: " + result.status());
+        getLogger().warning("Не удалось открыть баланс: " + result.status());
     }
 });
 
 shopApi.openShopList(viewerId, ownerId).thenAccept(result -> {
     if (!result.successful()) {
-        getLogger().warning("Could not open shop list: " + result.status());
+        getLogger().warning("Не удалось открыть список магазинов: " + result.status());
     }
 });
 ```
@@ -353,7 +353,7 @@ public class MyPlugin extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onBalanceChanged(BalanceChangedEvent event) {
-        getLogger().info("Balance changed for " + event.balance().playerId());
+        getLogger().info("Баланс изменён для игрока " + event.balance().playerId());
     }
 }
 ```
@@ -424,7 +424,7 @@ public void onPurchasePrepare(ShopPurchasePrepareEvent event) {
     );
 
     if (!added) {
-        getLogger().warning("Adjustment key is already used");
+        getLogger().warning("Ключ корректировки уже используется");
     }
 }
 ```
@@ -446,9 +446,9 @@ public void onPurchasePrepare(ShopPurchasePrepareEvent event) {
 @EventHandler
 public void onPurchaseCompleted(ShopPurchaseCompletedEvent event) {
     getLogger().info(
-            "Transaction " + event.transactionId()
-                    + " sold " + event.shop().id()
-                    + " for " + event.originalPrice()
+            "Транзакция " + event.transactionId()
+                    + ", магазин " + event.shop().id()
+                    + ", исходная цена " + event.originalPrice()
     );
 
     CurrencyAmounts buyerPayment = event.buyerPayment();
@@ -528,13 +528,13 @@ public class MyPlugin extends JavaPlugin implements Listener {
                     CurrencyType.DIAMOND_ORE,
                     5
             )).thenAccept(result ->
-                    getLogger().info("Reward result: " + result.status()));
+                    getLogger().info("Результат начисления награды: " + result.status()));
         });
     }
 
     @EventHandler
     public void onPurchaseCompleted(ShopPurchaseCompletedEvent event) {
-        getLogger().info("Sale completed: " + event.transactionId());
+        getLogger().info("Продажа завершена: " + event.transactionId());
     }
 }
 ```

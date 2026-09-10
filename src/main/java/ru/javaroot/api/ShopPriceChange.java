@@ -7,7 +7,7 @@ import java.util.UUID;
 
 public record ShopPriceChange(UUID operationId, NamespacedKey source, long shopId, int price) {
     public ShopPriceChange {
-        Objects.requireNonNull(operationId, "operationId");
-        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(operationId, "идентификатор операции");
+        Objects.requireNonNull(source, "источник");
     }
 }

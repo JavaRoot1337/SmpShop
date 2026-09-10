@@ -15,8 +15,8 @@ public class ShopRemovePrepareEvent extends Event implements Cancellable {
     private boolean cancelled;
 
     public ShopRemovePrepareEvent(UUID operationId, ShopSnapshot shop) {
-        this.operationId = Objects.requireNonNull(operationId, "operationId");
-        this.shop = Objects.requireNonNull(shop, "shop");
+        this.operationId = Objects.requireNonNull(operationId, "идентификатор операции");
+        this.shop = Objects.requireNonNull(shop, "магазин");
     }
 
     public UUID operationId() {

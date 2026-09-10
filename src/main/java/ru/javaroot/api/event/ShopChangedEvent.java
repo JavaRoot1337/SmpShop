@@ -15,9 +15,9 @@ public class ShopChangedEvent extends Event {
 
     public ShopChangedEvent(UUID operationId, ChangeType type, ShopSnapshot shop) {
         super(true);
-        this.operationId = Objects.requireNonNull(operationId, "operationId");
-        this.type = Objects.requireNonNull(type, "type");
-        this.shop = Objects.requireNonNull(shop, "shop");
+        this.operationId = Objects.requireNonNull(operationId, "идентификатор операции");
+        this.type = Objects.requireNonNull(type, "тип изменения");
+        this.shop = Objects.requireNonNull(shop, "магазин");
     }
 
     public UUID operationId() {

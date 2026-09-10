@@ -133,7 +133,7 @@ public class SmpShopApiImpl implements SmpShopApi {
 
     public void close() {
         state = ApiState.SHUTTING_DOWN;
-        readyFuture.completeExceptionally(new IllegalStateException("SmpShop API is shutting down"));
+        readyFuture.completeExceptionally(new IllegalStateException("API SmpShop завершает работу"));
         shopService.clearOperations();
     }
 

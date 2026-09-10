@@ -8,10 +8,10 @@ import java.util.UUID;
 public record ShopCreate(UUID operationId, NamespacedKey source, UUID ownerId, String ownerName,
                          ShopPosition first, ShopPosition second, int price) {
     public ShopCreate {
-        Objects.requireNonNull(operationId, "operationId");
-        Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(ownerId, "ownerId");
-        Objects.requireNonNull(ownerName, "ownerName");
-        Objects.requireNonNull(first, "first");
+        Objects.requireNonNull(operationId, "идентификатор операции");
+        Objects.requireNonNull(source, "источник");
+        Objects.requireNonNull(ownerId, "идентификатор владельца");
+        Objects.requireNonNull(ownerName, "имя владельца");
+        Objects.requireNonNull(first, "первая позиция");
     }
 }

@@ -5,6 +5,6 @@ import java.util.UUID;
 
 public record ShopPosition(UUID worldId, int x, int y, int z) {
     public ShopPosition {
-        Objects.requireNonNull(worldId, "worldId");
+        Objects.requireNonNull(worldId, "идентификатор мира");
     }
 }

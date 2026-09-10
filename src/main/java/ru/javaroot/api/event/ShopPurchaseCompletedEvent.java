@@ -24,12 +24,12 @@ public class ShopPurchaseCompletedEvent extends Event {
                                       CurrencyAmounts sellerPayout,
                                       List<PurchaseAdjustment> adjustments) {
         super(true);
-        this.transactionId = Objects.requireNonNull(transactionId, "transactionId");
-        this.buyerId = Objects.requireNonNull(buyerId, "buyerId");
-        this.shop = Objects.requireNonNull(shop, "shop");
+        this.transactionId = Objects.requireNonNull(transactionId, "идентификатор транзакции");
+        this.buyerId = Objects.requireNonNull(buyerId, "идентификатор покупателя");
+        this.shop = Objects.requireNonNull(shop, "магазин");
         this.originalPrice = originalPrice;
-        this.buyerPayment = Objects.requireNonNull(buyerPayment, "buyerPayment");
-        this.sellerPayout = Objects.requireNonNull(sellerPayout, "sellerPayout");
+        this.buyerPayment = Objects.requireNonNull(buyerPayment, "платёж покупателя");
+        this.sellerPayout = Objects.requireNonNull(sellerPayout, "выплата продавцу");
         this.adjustments = List.copyOf(adjustments);
     }
 

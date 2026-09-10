@@ -8,10 +8,10 @@ import java.util.UUID;
 public record BalanceTransfer(UUID operationId, NamespacedKey source, UUID fromPlayerId,
                               UUID toPlayerId, CurrencyType currency, long amount) {
     public BalanceTransfer {
-        Objects.requireNonNull(operationId, "operationId");
-        Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(fromPlayerId, "fromPlayerId");
-        Objects.requireNonNull(toPlayerId, "toPlayerId");
-        Objects.requireNonNull(currency, "currency");
+        Objects.requireNonNull(operationId, "идентификатор операции");
+        Objects.requireNonNull(source, "источник");
+        Objects.requireNonNull(fromPlayerId, "идентификатор отправителя");
+        Objects.requireNonNull(toPlayerId, "идентификатор получателя");
+        Objects.requireNonNull(currency, "валюта");
     }
 }

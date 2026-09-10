@@ -31,7 +31,7 @@ class ApiBalanceSvc {
 
     CompletionStage<BalanceSnapshot> balance(UUID playerId) {
         if (unavailable.get() != null) {
-            return CompletableFuture.failedFuture(new IllegalStateException("SmpShop API is not ready"));
+            return CompletableFuture.failedFuture(new IllegalStateException("API SmpShop ещё не готов к работе"));
         }
         return balances.load(playerId).thenApply(balance -> mapper.balance(playerId, balance));
     }
@@ -96,7 +96,7 @@ class ApiBalanceSvc {
             events.forEach(Bukkit.getPluginManager()::callEvent);
             scheduled.complete(result);
         }) != Sched.ScheduleResult.SCHEDULED) {
-            scheduled.completeExceptionally(new IllegalStateException("SmpShop API is shutting down"));
+            scheduled.completeExceptionally(new IllegalStateException("API SmpShop завершает работу"));
         }
         return scheduled;
     }

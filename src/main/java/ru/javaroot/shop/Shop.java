@@ -8,11 +8,11 @@ public record Shop(long id, UUID ownerId, String ownerName, UUID worldId,
                    long createdAt, boolean active) {
     public Shop {
         if (id < 0 || price < 1 || ownerId == null || worldId == null) {
-            throw new IllegalArgumentException("Invalid shop");
+            throw new IllegalArgumentException("Некорректные данные магазина");
         }
         boolean hasX = x2 != null;
         if (hasX != (y2 != null && z2 != null)) {
-            throw new IllegalArgumentException("Invalid second shop position");
+            throw new IllegalArgumentException("Некорректная позиция второго сундука магазина");
         }
     }
 

@@ -84,7 +84,7 @@ public class OtherMsg {
         try {
             loaded.load(file);
         } catch (IOException | InvalidConfigurationException exception) {
-            throw new IllegalStateException("Invalid " + RESOURCE, exception);
+            throw new IllegalStateException("Некорректный файл " + RESOURCE, exception);
         }
         return loaded;
     }

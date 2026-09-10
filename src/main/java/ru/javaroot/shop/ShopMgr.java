@@ -41,10 +41,10 @@ public class ShopMgr {
 
     private void addLocked(Shop shop) {
         if (byId.containsKey(shop.id()) || byBlock.containsKey(shop.firstKey())) {
-            throw new IllegalStateException("Duplicate shop registration: " + shop.id());
+            throw new IllegalStateException("Повторная регистрация магазина: " + shop.id());
         }
         if (shop.secondKey() != null && byBlock.containsKey(shop.secondKey())) {
-            throw new IllegalStateException("Duplicate shop position: " + shop.secondKey());
+            throw new IllegalStateException("Позиция магазина уже занята: " + shop.secondKey());
         }
         byId.put(shop.id(), shop);
         byBlock.put(shop.firstKey(), shop.id());

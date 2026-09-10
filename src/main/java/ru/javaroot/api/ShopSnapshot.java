@@ -8,10 +8,10 @@ public record ShopSnapshot(long id, UUID ownerId, String ownerName, ShopPosition
                            long soldSlots, long soldItems, long createdAt) {
     public ShopSnapshot {
         if (id < 1 || price < 1 || earnedTotal < 0 || soldSlots < 0 || soldItems < 0) {
-            throw new IllegalArgumentException("Invalid shop snapshot");
+            throw new IllegalArgumentException("Некорректный снимок магазина");
         }
-        Objects.requireNonNull(ownerId, "ownerId");
-        Objects.requireNonNull(ownerName, "ownerName");
-        Objects.requireNonNull(first, "first");
+        Objects.requireNonNull(ownerId, "идентификатор владельца");
+        Objects.requireNonNull(ownerName, "имя владельца");
+        Objects.requireNonNull(first, "первая позиция");
     }
 }

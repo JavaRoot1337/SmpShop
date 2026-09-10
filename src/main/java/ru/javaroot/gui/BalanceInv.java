@@ -268,7 +268,7 @@ public class BalanceInv implements Listener {
                 return CompletableFuture.completedFuture(null);
             }
             return recoverFailedSettle(session, player, invalid, diamondDelta, deepslateDelta,
-                    new IllegalStateException("Balance changed during GUI session: " + result.status()));
+                    new IllegalStateException("Баланс изменился во время работы GUI: " + result.status()));
         });
     }
 
@@ -299,7 +299,7 @@ public class BalanceInv implements Listener {
         return balances.change(operationId, "smpshop:balance_gui_compensation", session.playerId, currency, amount)
                 .thenAccept(result -> {
                     if (result.status() != BalanceStore.MutationStatus.SUCCESS) {
-                        throw new IllegalStateException("Balance compensation failed: " + result.status());
+                        throw new IllegalStateException("Не удалось компенсировать изменение баланса: " + result.status());
                     }
                 });
     }

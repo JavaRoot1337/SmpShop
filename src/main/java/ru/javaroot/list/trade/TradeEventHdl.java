@@ -316,7 +316,7 @@ public class TradeEventHdl {
                     }
                     delivery.removeTemporaryMarkers(player);
                     if (error != null) {
-                        logger.log(Level.WARNING, "Не удалось очистить временные marker-ы игрока "
+                        logger.log(Level.WARNING, "Не удалось очистить временные маркеры игрока "
                                 + player.getUniqueId(), error);
                         return;
                     }

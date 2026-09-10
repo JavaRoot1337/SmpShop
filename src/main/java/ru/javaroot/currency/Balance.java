@@ -3,7 +3,7 @@ package ru.javaroot.currency;
 public record Balance(long diamondOre, long deepslateDiamondOre) {
     public Balance {
         if (diamondOre < 0 || deepslateDiamondOre < 0) {
-            throw new IllegalArgumentException("Balance cannot be negative");
+            throw new IllegalArgumentException("Баланс не может быть отрицательным");
         }
     }
 

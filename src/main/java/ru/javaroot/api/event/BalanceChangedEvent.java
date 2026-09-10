@@ -16,9 +16,9 @@ public class BalanceChangedEvent extends Event {
 
     public BalanceChangedEvent(UUID operationId, NamespacedKey source, BalanceSnapshot balance) {
         super(true);
-        this.operationId = Objects.requireNonNull(operationId, "operationId");
-        this.source = Objects.requireNonNull(source, "source");
-        this.balance = Objects.requireNonNull(balance, "balance");
+        this.operationId = Objects.requireNonNull(operationId, "идентификатор операции");
+        this.source = Objects.requireNonNull(source, "источник");
+        this.balance = Objects.requireNonNull(balance, "баланс");
     }
 
     public UUID operationId() {

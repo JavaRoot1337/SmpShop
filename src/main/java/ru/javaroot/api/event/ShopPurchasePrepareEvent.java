@@ -23,10 +23,10 @@ public class ShopPurchasePrepareEvent extends Event implements Cancellable {
 
     public ShopPurchasePrepareEvent(UUID transactionId, UUID buyerId, ShopSnapshot shop,
                                     CurrencyAmounts basePayment) {
-        this.transactionId = Objects.requireNonNull(transactionId, "transactionId");
-        this.buyerId = Objects.requireNonNull(buyerId, "buyerId");
-        this.shop = Objects.requireNonNull(shop, "shop");
-        this.basePayment = Objects.requireNonNull(basePayment, "basePayment");
+        this.transactionId = Objects.requireNonNull(transactionId, "идентификатор транзакции");
+        this.buyerId = Objects.requireNonNull(buyerId, "идентификатор покупателя");
+        this.shop = Objects.requireNonNull(shop, "магазин");
+        this.basePayment = Objects.requireNonNull(basePayment, "базовый платёж");
     }
 
     public UUID transactionId() {
@@ -50,7 +50,7 @@ public class ShopPurchasePrepareEvent extends Event implements Cancellable {
     }
 
     public boolean addAdjustment(NamespacedKey key, AdjustmentType type, CurrencyAmounts amounts) {
-        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(key, "ключ корректировки");
         if (adjustments.stream().anyMatch(adjustment -> adjustment.key().equals(key))) {
             return false;
         }

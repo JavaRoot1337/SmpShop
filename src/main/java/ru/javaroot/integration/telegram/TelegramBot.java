@@ -132,7 +132,7 @@ public class TelegramBot {
         } catch (RuntimeException exception) {
             failures = Math.min(failures + 1, 6);
             nextPollAt = System.currentTimeMillis() + (1L << failures) * 1000L;
-            warn(other.raw("telegram-poll-error", Map.of("error", "request failed")));
+            warn(other.raw("telegram-poll-error", Map.of("error", "запрос не выполнен")));
         } finally {
             polling.set(false);
         }
@@ -190,7 +190,7 @@ public class TelegramBot {
                 warn(other.raw("telegram-message-http-error", Map.of("status", response.statusCode())));
             }
         }).exceptionally(error -> {
-            warn(other.raw("telegram-send-error", Map.of("error", "request failed")));
+            warn(other.raw("telegram-send-error", Map.of("error", "запрос не выполнен")));
             return null;
         });
     }

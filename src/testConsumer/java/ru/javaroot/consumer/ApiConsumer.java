@@ -54,6 +54,6 @@ public class ApiConsumer extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onPurchaseCompleted(ShopPurchaseCompletedEvent event) {
-        getLogger().info("SmpShop transaction completed: " + event.transactionId());
+        getLogger().info("Транзакция SmpShop завершена: " + event.transactionId());
     }
 }

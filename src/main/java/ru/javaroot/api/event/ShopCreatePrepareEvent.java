@@ -13,7 +13,7 @@ public class ShopCreatePrepareEvent extends Event implements Cancellable {
     private boolean cancelled;
 
     public ShopCreatePrepareEvent(ShopCreate request) {
-        this.request = Objects.requireNonNull(request, "request");
+        this.request = Objects.requireNonNull(request, "запрос создания магазина");
     }
 
     public ShopCreate request() {

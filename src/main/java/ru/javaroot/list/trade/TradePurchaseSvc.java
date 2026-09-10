@@ -208,7 +208,7 @@ class TradePurchaseSvc {
         if (sched.region(session.location, () -> takePhysicalAndComplete(player, session, shop, slot,
                 product, transactionId, pay, adjustments)) != Sched.ScheduleResult.SCHEDULED) {
             restoreFailedPurchase(player, session, shop, product, transactionId, pay.buyer(), slot, false,
-                    new IllegalStateException("Shop region is unavailable"));
+                    new IllegalStateException("Регион магазина недоступен"));
         }
     }
 
@@ -218,7 +218,7 @@ class TradePurchaseSvc {
         ItemStack physical = session.physical.getItem(slot);
         if (physical == null || !physical.isSimilar(product) || physical.getAmount() != product.getAmount()) {
             restoreFailedPurchase(player, session, shop, product, transactionId, pay.buyer(), slot, true,
-                    new IllegalStateException("Shop item changed before commit"));
+                    new IllegalStateException("Товар в магазине изменился до подтверждения операции"));
             return;
         }
         session.physical.setItem(slot, null);
@@ -235,7 +235,7 @@ class TradePurchaseSvc {
                 .thenAccept(completed -> {
                     if (!completed) {
                         restoreFailedPurchase(player, session, shop, product, transactionId, pay.buyer(), itemSlot,
-                                true, new IllegalStateException("Transaction is no longer prepared"));
+                                true, new IllegalStateException("Транзакция больше не подготовлена"));
                         return;
                     }
                     CompletableFuture<Void> publication = new CompletableFuture<>();

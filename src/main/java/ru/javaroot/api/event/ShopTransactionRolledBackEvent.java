@@ -14,9 +14,9 @@ public class ShopTransactionRolledBackEvent extends Event {
 
     public ShopTransactionRolledBackEvent(UUID transactionId, long shopId, UUID buyerId) {
         super(true);
-        this.transactionId = Objects.requireNonNull(transactionId, "transactionId");
+        this.transactionId = Objects.requireNonNull(transactionId, "идентификатор транзакции");
         this.shopId = shopId;
-        this.buyerId = Objects.requireNonNull(buyerId, "buyerId");
+        this.buyerId = Objects.requireNonNull(buyerId, "идентификатор покупателя");
     }
 
     public UUID transactionId() {

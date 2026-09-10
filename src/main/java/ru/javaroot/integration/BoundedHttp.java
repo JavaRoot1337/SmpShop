@@ -27,7 +27,7 @@ public class BoundedHttp {
 
     public CompletableFuture<Response> send(HttpRequest request) {
         if (!permits.tryAcquire()) {
-            return CompletableFuture.failedFuture(new RejectedExecutionException("HTTP request limit reached"));
+            return CompletableFuture.failedFuture(new RejectedExecutionException("Достигнут лимит HTTP-запросов"));
         }
         try {
             return client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
@@ -44,7 +44,7 @@ public class BoundedHttp {
                             }
                             if (body.length > responseLimit) {
                                 throw new CompletionException(
-                                        new IllegalStateException("HTTP response is too large"));
+                                        new IllegalStateException("Ответ HTTP превышает допустимый размер"));
                             }
                             return new Response(response.statusCode(),
                                     new String(body, StandardCharsets.UTF_8));

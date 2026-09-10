@@ -4,7 +4,7 @@ import java.util.Objects;
 
 public record ShopResult(ApiStatus status, ShopSnapshot shop) {
     public ShopResult {
-        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(status, "статус");
     }
 
     public boolean successful() {
