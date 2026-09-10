@@ -16,7 +16,7 @@ public class Migration {
         }
         int current = currentVersion(connection);
         if (current > LATEST_VERSION) {
-            throw new SQLException("Database schema is newer than this plugin: " + current);
+            throw new SQLException("Версия схемы базы данных новее версии плагина: " + current);
         }
         if (current > 0 && current < LATEST_VERSION) {
             backup(connection, databaseFile);
@@ -90,7 +90,7 @@ public class Migration {
                     statement.executeUpdate("UPDATE transactions SET state = 'DELIVERED', delivered_at = COALESCE(completed_at, created_at) WHERE state = 'COMPLETED' AND item_snapshot IS NULL");
                     statement.executeUpdate("UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = created_at WHERE state = 'PREPARED' AND (transaction_key IS NULL OR item_snapshot IS NULL)");
                 }
-                default -> throw new SQLException("Unknown migration: " + version);
+                default -> throw new SQLException("Неизвестная миграция: " + version);
             }
         }
     }

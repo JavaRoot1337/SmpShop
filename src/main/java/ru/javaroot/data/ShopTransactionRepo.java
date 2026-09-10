@@ -43,7 +43,7 @@ class ShopTransactionRepo {
                 statement.setString(13, adjustments);
                 statement.setLong(14, System.currentTimeMillis());
                 if (statement.executeUpdate() != 1) {
-                    throw new SQLException("Transaction ID is already used");
+                    throw new SQLException("Идентификатор транзакции уже использован");
                 }
             }
             return null;
@@ -76,7 +76,7 @@ class ShopTransactionRepo {
                 statement.setLong(5, Long.MAX_VALUE);
                 statement.setLong(6, Long.MAX_VALUE - items);
                 if (statement.executeUpdate() != 1) {
-                    throw new SQLException("Shop is no longer active or statistics overflowed");
+                    throw new SQLException("Магазин больше не активен или статистика переполнена");
                 }
             }
             for (Map.Entry<Currency, Long> entry : sellerPayout.entrySet()) {
@@ -258,7 +258,7 @@ class ShopTransactionRepo {
             statement.setLong(4, System.currentTimeMillis());
             statement.setLong(5, Long.MAX_VALUE);
             if (statement.executeUpdate() != 1) {
-                throw new SQLException("Balance overflow");
+                throw new SQLException("Переполнение баланса");
             }
         }
     }
@@ -266,7 +266,7 @@ class ShopTransactionRepo {
     private void addRecovery(Connection connection, String transactionId, UUID playerId,
                              byte[] itemSnapshot) throws SQLException {
         if (playerId == null || itemSnapshot == null) {
-            throw new SQLException("Missing item recovery data");
+            throw new SQLException("Отсутствуют данные для восстановления предмета");
         }
         try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO item_recovery(transaction_id, player_uuid, item_snapshot, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(transaction_id) DO NOTHING")) {

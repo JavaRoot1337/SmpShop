@@ -141,7 +141,7 @@ class ShopRepo {
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 if (!keys.next()) {
-                    throw new SQLException("SQLite did not return shop id");
+                    throw new SQLException("SQLite не вернул идентификатор магазина");
                 }
                 return keys.getLong(1);
             }

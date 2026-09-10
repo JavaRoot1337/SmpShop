@@ -37,7 +37,7 @@ public class LinkStore {
                     }
                 }
             }
-            throw new SQLException("Could not create a unique link code");
+            throw new SQLException("Не удалось создать уникальный код привязки");
         });
     }
 
@@ -107,7 +107,7 @@ public class LinkStore {
             }
             return value.toString();
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
+            throw new IllegalStateException("Алгоритм SHA-256 недоступен", exception);
         }
     }
 

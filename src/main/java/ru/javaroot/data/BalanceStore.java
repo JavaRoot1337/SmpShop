@@ -35,7 +35,7 @@ public class BalanceStore {
         return db.submit(connection -> {
             MutationStatus status = update(connection, playerId, currency, amount);
             if (status != MutationStatus.SUCCESS) {
-                throw new SQLException("Balance overflow");
+                throw new SQLException("Переполнение баланса");
             }
             return null;
         });
@@ -160,7 +160,7 @@ public class BalanceStore {
             statement.setLong(2, System.currentTimeMillis());
             statement.setString(3, playerId.toString());
             if (statement.executeUpdate() != 1) {
-                throw new SQLException("Balance row disappeared");
+                throw new SQLException("Запись баланса исчезла во время операции");
             }
         }
     }

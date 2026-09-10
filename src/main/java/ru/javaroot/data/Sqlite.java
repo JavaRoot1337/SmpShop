@@ -44,7 +44,7 @@ public class Sqlite {
     public CompletableFuture<Void> start() {
         synchronized (lifecycle) {
             if (state != State.NEW) {
-                return CompletableFuture.failedFuture(new IllegalStateException("SQLite has already started"));
+                return CompletableFuture.failedFuture(new IllegalStateException("SQLite уже запущен"));
             }
             state = State.STARTING;
             startFuture = CompletableFuture.runAsync(this::initialize, queue);
@@ -57,7 +57,7 @@ public class Sqlite {
             File file = new File(plugin.getDataFolder(), fileName);
             File parent = file.getParentFile();
             if (!parent.exists() && !parent.mkdirs()) {
-                throw new SQLException("Cannot create plugin data folder");
+                throw new SQLException("Не удалось создать папку данных плагина");
             }
             driver = new JDBC();
             DriverManager.registerDriver(driver);
@@ -70,27 +70,27 @@ public class Sqlite {
         } catch (SQLException exception) {
             closeResources();
             state = State.FAILED;
-            throw new CompletionException(new IllegalStateException("SQLite initialization failed", exception));
+            throw new CompletionException(new IllegalStateException("Не удалось инициализировать SQLite", exception));
         }
     }
 
     public <T> CompletableFuture<T> submit(SqlWork<T> work) {
         if (state != State.READY) {
-            return CompletableFuture.failedFuture(new IllegalStateException("SQLite is not ready"));
+            return CompletableFuture.failedFuture(new IllegalStateException("SQLite не готов к работе"));
         }
         try {
             return CompletableFuture.supplyAsync(() -> {
                 try {
                     if (connection == null || connection.isClosed()) {
-                        throw new IllegalStateException("SQLite is not ready");
+                        throw new IllegalStateException("SQLite не готов к работе");
                     }
                     return work.run(connection);
                 } catch (SQLException exception) {
-                    throw new IllegalStateException("SQLite operation failed", exception);
+                    throw new IllegalStateException("Не удалось выполнить операцию SQLite", exception);
                 }
             }, queue);
         } catch (RejectedExecutionException exception) {
-            return CompletableFuture.failedFuture(new IllegalStateException("SQLite is closing", exception));
+            return CompletableFuture.failedFuture(new IllegalStateException("SQLite закрывается", exception));
         }
     }
 
