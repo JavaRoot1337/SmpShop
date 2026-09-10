@@ -55,7 +55,8 @@ class TradeDeliverySvc {
                 && event.getClick() == org.bukkit.event.inventory.ClickType.LEFT
                 && event.getAction() == org.bukkit.event.inventory.InventoryAction.PLACE_ALL
                 && TradeItem.isEmpty(event.getCurrentItem()) && !TradeItem.isEmpty(event.getCursor())
-                && event.getCursor().getAmount() == event.getCursor().getMaxStackSize();
+                && event.getCursor().getAmount() >= 1
+                && event.getCursor().getAmount() <= event.getCursor().getMaxStackSize();
     }
 
     boolean isDeliveryPlacement(org.bukkit.event.inventory.InventoryDragEvent event) {
@@ -66,7 +67,8 @@ class TradeDeliverySvc {
         int rawSlot = event.getRawSlots().iterator().next();
         return rawSlot >= topSize
                 && TradeItem.isEmpty(event.getView().getBottomInventory().getItem(rawSlot - topSize))
-                && event.getOldCursor().getAmount() == event.getOldCursor().getMaxStackSize();
+                && event.getOldCursor().getAmount() >= 1
+                && event.getOldCursor().getAmount() <= event.getOldCursor().getMaxStackSize();
     }
 
     void deliverPending(Player player) {
@@ -278,7 +280,7 @@ class TradeDeliverySvc {
         String value = marker(item);
         return expected != null && (!isDeliveryItem(item) || (value != null && value.startsWith("pending:")))
                 && !TradeItem.isEmpty(item) && pendingSimilar(item, expected, value)
-                && item.getAmount() == expected.getAmount() && item.getAmount() == item.getMaxStackSize();
+                && item.getAmount() == expected.getAmount();
     }
 
     private boolean pendingSimilar(ItemStack item, ItemStack expected, String value) {
@@ -292,22 +294,37 @@ class TradeDeliverySvc {
 
     void confirmDelivery(Player player, String transactionId) {
         String marker = "transaction:" + transactionId;
-        shopStore.delivered(transactionId).thenRun(() -> sched.entity(player, () -> clearMarker(player.getInventory(), marker)));
+        shopStore.delivered(transactionId, player.getUniqueId())
+                .thenAccept(delivered -> {
+                    if (delivered) {
+                        sched.entity(player, () -> clearMarker(player.getInventory(), marker),
+                                () -> { });
+                    }
+                });
     }
 
     void confirmDelivery(Player player, String transactionId, Runnable completed) {
         String marker = "transaction:" + transactionId;
-        shopStore.delivered(transactionId).thenRun(() -> sched.entity(player, () -> {
-            clearMarker(player.getInventory(), marker);
-            if (completed != null) {
-                completed.run();
+        shopStore.delivered(transactionId, player.getUniqueId()).thenAccept(delivered -> {
+            if (!delivered) {
+                return;
             }
-        }));
+            sched.entity(player, () -> {
+                clearMarker(player.getInventory(), marker);
+                if (completed != null) {
+                    completed.run();
+                }
+            }, () -> { });
+        });
     }
 
     private void confirmRecovery(Player player, long recoveryId) {
         String marker = "recovery:" + recoveryId;
-        shopStore.recoveryDelivered(recoveryId)
-                .thenRun(() -> sched.entity(player, () -> clearMarker(player.getInventory(), marker)));
+        shopStore.recoveryDelivered(recoveryId, player.getUniqueId()).thenAccept(delivered -> {
+            if (delivered) {
+                sched.entity(player, () -> clearMarker(player.getInventory(), marker), () -> { });
+            }
+        });
     }
+
 }

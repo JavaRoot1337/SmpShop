@@ -189,7 +189,7 @@ class ShopRepo {
 
     private Shop readById(Connection connection, long id) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT id, owner_uuid, owner_name, world_uuid, x1, y1, z1, x2, y2, z2, price, earned_total, sold_slots, sold_items, created_at FROM shops WHERE id = ?")) {
+                "SELECT id, owner_uuid, owner_name, world_uuid, x1, y1, z1, x2, y2, z2, price, earned_total, sold_slots, sold_items, created_at FROM shops WHERE id = ? AND deleted_at IS NULL")) {
             statement.setLong(1, id);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? read(result) : null;

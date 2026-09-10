@@ -46,7 +46,7 @@ public class IntegrationHub {
                 cfg.httpResponseLimitBytes());
     }
 
-    public void start(Sched sched) {
+    public synchronized void start(Sched sched) {
         if (cfg.telegramEnabled()) {
             if (cfg.telegramToken() == null || cfg.telegramToken().isBlank()) {
                 logger.warning(other.raw("telegram-token-empty-log"));
@@ -69,7 +69,7 @@ public class IntegrationHub {
         });
     }
 
-    public void stop() {
+    public synchronized void stop() {
         if (telegram != null) {
             telegram.stop();
             telegram = null;
@@ -78,7 +78,7 @@ public class IntegrationHub {
         webhookUrls.clear();
     }
 
-    public void reload(Sched sched) {
+    public synchronized void reload(Sched sched) {
         if (telegram != null) {
             telegram.stop();
             telegram = null;

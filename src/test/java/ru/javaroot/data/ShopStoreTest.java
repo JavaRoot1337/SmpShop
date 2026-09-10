@@ -38,6 +38,9 @@ class ShopStoreTest {
                     Currency.DIAMOND_ORE, 7L, Currency.DEEPSLATE_DIAMOND_ORE, 3L);
             store.prepareSale("test-transaction", shop, buyerId, 3, 2, 10,
                     payment, payment, new byte[]{1, 2, 3}, "[]").join();
+            assertThrows(java.util.concurrent.CompletionException.class,
+                    () -> store.prepareSale("test-transaction", shop, buyerId, 3, 2, 10,
+                            payment, payment, new byte[]{1, 2, 3}, "[]").join());
             store.completeSale("test-transaction", shop, 2, payment).join();
             store.completeSale("test-transaction", shop, 2, payment).join();
 

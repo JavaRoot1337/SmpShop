@@ -68,6 +68,16 @@ public class ShopInteract implements Listener {
             return;
         }
         event.setCancelled(true);
+        if (action.type() == ShopCmd.ActionType.REMOVE && !player.hasPermission("smpshop.admin.remove")) {
+            msg.send(player, "no-permission");
+            command.clearAction(player.getUniqueId());
+            return;
+        }
+        if (!player.hasPermission("smpshop.use")) {
+            msg.send(player, "no-permission");
+            command.clearAction(player.getUniqueId());
+            return;
+        }
         if (action.type() == ShopCmd.ActionType.DELETE && !shop.ownerId().equals(player.getUniqueId())) {
             msg.send(player, "shop-not-owner");
             command.clearAction(player.getUniqueId());
@@ -97,20 +107,41 @@ public class ShopInteract implements Listener {
                 locations.size() == 2 ? locations.get(1).getBlockY() : null,
                 locations.size() == 2 ? locations.get(1).getBlockZ() : null,
                 action.price(), 0, 0, 0, System.currentTimeMillis(), true);
-        store.insert(draft).thenAccept(id -> sched.region(first, () -> {
-            boolean invalid = locations.stream().anyMatch(loc -> loc.getBlock().getType() != Material.CHEST);
-            boolean conflict = keys.stream().anyMatch(key -> shops.find(key) != null);
-            if (invalid || conflict) {
+        store.insert(draft).thenAccept(id -> {
+            Runnable cleanup = () -> {
                 shops.release(player.getUniqueId(), keys);
-                store.delete(id);
+                store.delete(id).exceptionally(error -> {
+                    plugin.getLogger().warning("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‡РёСЃС‚РёС‚СЊ РјР°РіР°Р·РёРЅ: " + error.getMessage());
+                    return null;
+                });
+            };
+            if (sched.region(first, () -> {
+                boolean invalid = locations.stream().anyMatch(loc -> loc.getBlock().getType() != Material.CHEST);
+                boolean conflict = keys.stream().anyMatch(shops::isRegistered);
+                if (invalid || conflict) {
+                    cleanup.run();
+                    sched.entity(player, () -> msg.send(player, "shop-conflict"));
+                    return;
+                }
+                Shop shop = new Shop(id, draft.ownerId(), draft.ownerName(), draft.worldId(), draft.x1(), draft.y1(), draft.z1(), draft.x2(), draft.y2(), draft.z2(), draft.price(), 0, 0, 0, draft.createdAt(), true);
+                if (sched.global(() -> {
+                    try {
+                        shops.add(shop);
+                        shops.release(player.getUniqueId(), keys);
+                        sched.entity(player, () -> msg.send(player, "shop-created", Map.of("price", shop.price())));
+                    } catch (RuntimeException exception) {
+                        cleanup.run();
+                        plugin.getLogger().warning("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°С‚СЊ РјР°РіР°Р·РёРЅ: " + exception.getMessage());
+                    }
+                }) != Sched.ScheduleResult.SCHEDULED) {
+                    cleanup.run();
+                    sched.entity(player, () -> msg.send(player, "shop-conflict"));
+                }
+            }) != Sched.ScheduleResult.SCHEDULED) {
+                cleanup.run();
                 sched.entity(player, () -> msg.send(player, "shop-conflict"));
-                return;
             }
-            Shop shop = new Shop(id, draft.ownerId(), draft.ownerName(), draft.worldId(), draft.x1(), draft.y1(), draft.z1(), draft.x2(), draft.y2(), draft.z2(), draft.price(), 0, 0, 0, draft.createdAt(), true);
-            shops.add(shop);
-            shops.release(player.getUniqueId(), keys);
-            sched.entity(player, () -> msg.send(player, "shop-created", Map.of("price", shop.price())));
-        })).exceptionally(error -> {
+        }).exceptionally(error -> {
             shops.release(player.getUniqueId(), keys);
             plugin.getLogger().warning("Не удалось сохранить магазин: " + error.getMessage());
             return null;

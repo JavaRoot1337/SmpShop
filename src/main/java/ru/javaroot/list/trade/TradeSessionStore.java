@@ -12,14 +12,15 @@ class TradeSessionStore {
     private final Map<UUID, TradeSession> sessions = new ConcurrentHashMap<>();
     private final Map<UUID, EnumMap<Currency, Long>> pendingReturns = new ConcurrentHashMap<>();
     private final Set<Long> lockedShops = ConcurrentHashMap.newKeySet();
+    private final Set<Long> removalLocks = ConcurrentHashMap.newKeySet();
     private volatile boolean accepting;
 
     TradeSession get(UUID playerId) {
         return sessions.get(playerId);
     }
 
-    void put(UUID playerId, TradeSession session) {
-        sessions.put(playerId, session);
+    boolean putIfAbsent(UUID playerId, TradeSession session) {
+        return sessions.putIfAbsent(playerId, session) == null;
     }
 
     TradeSession remove(UUID playerId) {
@@ -46,7 +47,7 @@ class TradeSessionStore {
     }
 
     boolean isBusy(long shopId) {
-        return lockedShops.contains(shopId);
+        return lockedShops.contains(shopId) || removalLocks.contains(shopId);
     }
 
     boolean reserve(long shopId) {
@@ -55,6 +56,14 @@ class TradeSessionStore {
 
     void release(long shopId) {
         lockedShops.remove(shopId);
+    }
+
+    boolean reserveRemoval(long shopId) {
+        return removalLocks.add(shopId);
+    }
+
+    void releaseRemoval(long shopId) {
+        removalLocks.remove(shopId);
     }
 
     boolean accepting() {

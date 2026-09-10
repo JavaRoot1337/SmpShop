@@ -91,7 +91,11 @@ class BalancePages {
     }
 
     static long pageCount(Balance balance) {
-        long stacks = Math.addExact(stackCount(balance.diamondOre()), stackCount(balance.deepslateDiamondOre()));
+        long diamondStacks = stackCount(balance.diamondOre());
+        long deepslateStacks = stackCount(balance.deepslateDiamondOre());
+        long stacks = diamondStacks > Long.MAX_VALUE - deepslateStacks
+                ? Long.MAX_VALUE
+                : diamondStacks + deepslateStacks;
         return stacks == 0 ? 1 : (stacks - 1) / BALANCE_SLOTS + 1;
     }
 
@@ -101,7 +105,7 @@ class BalancePages {
             for (ItemStack item : page) {
                 Currency currency = item == null ? null : Currency.from(item.getType());
                 if (currency != null) {
-                    amounts.merge(currency, (long) item.getAmount(), Long::sum);
+                    amounts.merge(currency, (long) item.getAmount(), Math::addExact);
                 }
             }
         }

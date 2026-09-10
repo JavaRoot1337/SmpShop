@@ -4,6 +4,7 @@ import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.ServicePriority;
 import java.util.logging.Level;
+import java.util.concurrent.CompletableFuture;
 import ru.javaroot.command.ShopCmd;
 import ru.javaroot.api.SmpShopApi;
 import ru.javaroot.api.SmpShopApiImpl;
@@ -52,9 +53,14 @@ public class SmpShop extends JavaPlugin {
     private ItemName itemNames;
     private SmpShopApiImpl api;
     private volatile boolean ready;
+    private volatile boolean stopping;
+    private long lifecycleGeneration;
+    private CompletableFuture<Void> startup;
 
     @Override
     public void onEnable() {
+        stopping = false;
+        long generation = ++lifecycleGeneration;
         saveDefaultConfig();
         other = new OtherMsg(this);
         msg = new Msg(this, other);
@@ -98,7 +104,7 @@ public class SmpShop extends JavaPlugin {
         getServer().getPluginManager().registerEvents(trade, this);
         getServer().getPluginManager().registerEvents(notifications, this);
 
-        db.start()
+        startup = db.start()
                 .thenCompose(ignored -> shopStore.loadAll()
                         .thenCombine(webhookStore.loadAll(), StartupData::new))
                 .thenCompose(data -> {
@@ -109,6 +115,9 @@ public class SmpShop extends JavaPlugin {
                     return trade.recover();
                 })
                 .whenComplete((ignored, error) -> {
+                    if (stopping || generation != lifecycleGeneration || !isEnabled()) {
+                        return;
+                    }
                     if (error != null) {
                         ready = false;
                         api.markFailed(error);
@@ -129,6 +138,8 @@ public class SmpShop extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        stopping = true;
+        lifecycleGeneration++;
         ready = false;
         if (api != null) {
             api.close();

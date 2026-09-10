@@ -15,6 +15,9 @@ public class Migration {
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)");
         }
         int current = currentVersion(connection);
+        if (current > LATEST_VERSION) {
+            throw new SQLException("Database schema is newer than this plugin: " + current);
+        }
         if (current > 0 && current < LATEST_VERSION) {
             backup(connection, databaseFile);
         }

@@ -14,87 +14,110 @@ public class ShopMgr {
     private final ConcurrentMap<Long, Shop> byId = new ConcurrentHashMap<>();
     private final ConcurrentMap<ShopKey, Long> byBlock = new ConcurrentHashMap<>();
     private final Set<ShopKey> reserved = ConcurrentHashMap.newKeySet();
+    private final Map<ShopKey, UUID> reservationOwners = new HashMap<>();
     private final Map<UUID, Integer> pendingByOwner = new HashMap<>();
+    private final Object indexLock = new Object();
 
     public void load(Collection<Shop> shops) {
-        byId.clear();
-        byBlock.clear();
-        synchronized (reserved) {
-            reserved.clear();
-            pendingByOwner.clear();
-        }
-        for (Shop shop : shops) {
-            add(shop);
-        }
-    }
-
-    public boolean tryReserve(UUID ownerId, int limit, Collection<ShopKey> keys) {
-        synchronized (reserved) {
-            if (count(ownerId) + pendingByOwner.getOrDefault(ownerId, 0) >= limit) {
-                return false;
+        synchronized (indexLock) {
+            byId.clear();
+            byBlock.clear();
+            synchronized (reserved) {
+                reserved.clear();
+                reservationOwners.clear();
+                pendingByOwner.clear();
             }
-            if (keys.stream().anyMatch(reserved::contains) || keys.stream().anyMatch(byBlock::containsKey)) {
-                return false;
+            for (Shop shop : shops) {
+                addLocked(shop);
             }
-            reserved.addAll(keys);
-            pendingByOwner.merge(ownerId, 1, Integer::sum);
-            return true;
         }
     }
 
-    public void release(UUID ownerId, Collection<ShopKey> keys) {
-        synchronized (reserved) {
-            reserved.removeAll(keys);
-            pendingByOwner.computeIfPresent(ownerId, (id, count) -> count == 1 ? null : count - 1);
+    public boolean isReserved(ShopKey key) {
+        synchronized (indexLock) {
+            return reserved.contains(key);
         }
     }
 
-    public void add(Shop shop) {
-        if (byId.putIfAbsent(shop.id(), shop) != null || byBlock.putIfAbsent(shop.firstKey(), shop.id()) != null) {
+    private void addLocked(Shop shop) {
+        if (byId.containsKey(shop.id()) || byBlock.containsKey(shop.firstKey())) {
             throw new IllegalStateException("Duplicate shop registration: " + shop.id());
         }
+        if (shop.secondKey() != null && byBlock.containsKey(shop.secondKey())) {
+            throw new IllegalStateException("Duplicate shop position: " + shop.secondKey());
+        }
+        byId.put(shop.id(), shop);
+        byBlock.put(shop.firstKey(), shop.id());
         if (shop.secondKey() != null) {
-            if (byBlock.putIfAbsent(shop.secondKey(), shop.id()) != null) {
-                byId.remove(shop.id(), shop);
-                byBlock.remove(shop.firstKey(), shop.id());
-                throw new IllegalStateException("Duplicate shop position: " + shop.secondKey());
-            }
+            byBlock.put(shop.secondKey(), shop.id());
         }
     }
 
-    public void remove(Shop shop) {
-        byId.remove(shop.id());
+    private void removeLocked(Shop shop) {
+        byId.remove(shop.id(), shop);
         byBlock.remove(shop.firstKey(), shop.id());
         if (shop.secondKey() != null) {
             byBlock.remove(shop.secondKey(), shop.id());
         }
     }
 
+    public boolean isProtected(ShopKey key) {
+        synchronized (indexLock) {
+            return isReserved(key) || byBlock.containsKey(key);
+        }
+    }
+
+    public boolean isRegistered(ShopKey key) {
+        synchronized (indexLock) {
+            return byBlock.containsKey(key);
+        }
+    }
+
+    public void add(Shop shop) {
+        synchronized (indexLock) {
+            addLocked(shop);
+        }
+    }
+
+    public void remove(Shop shop) {
+        synchronized (indexLock) {
+            removeLocked(shop);
+        }
+    }
+
     public Shop find(ShopKey key) {
-        Long id = byBlock.get(key);
-        return id == null ? null : byId.get(id);
+        synchronized (indexLock) {
+            Long id = byBlock.get(key);
+            return id == null ? null : byId.get(id);
+        }
     }
 
     public Shop find(long id) {
-        return byId.get(id);
+        synchronized (indexLock) {
+            return byId.get(id);
+        }
     }
 
     public int count(UUID ownerId) {
-        int count = 0;
-        for (Shop shop : byId.values()) {
-            if (shop.ownerId().equals(ownerId)) {
-                count++;
+        synchronized (indexLock) {
+            int count = 0;
+            for (Shop shop : byId.values()) {
+                if (shop.ownerId().equals(ownerId)) {
+                    count++;
+                }
             }
+            return count;
         }
-        return count;
     }
 
     public Collection<Shop> all() {
-        return Collections.unmodifiableCollection(new ArrayList<>(byId.values()));
+        synchronized (indexLock) {
+            return Collections.unmodifiableCollection(new ArrayList<>(byId.values()));
+        }
     }
 
     public Shop updatePrice(long shopId, int price) {
-        while (true) {
+        synchronized (indexLock) {
             Shop shop = byId.get(shopId);
             if (shop == null) {
                 return null;
@@ -102,17 +125,50 @@ public class ShopMgr {
             Shop updated = new Shop(shop.id(), shop.ownerId(), shop.ownerName(), shop.worldId(),
                     shop.x1(), shop.y1(), shop.z1(), shop.x2(), shop.y2(), shop.z2(), price,
                     shop.earnedTotal(), shop.soldSlots(), shop.soldItems(), shop.createdAt(), shop.active());
-            if (byId.replace(shopId, shop, updated)) {
-                return updated;
-            }
+            byId.put(shopId, updated);
+            return updated;
         }
     }
 
     public void recordSale(long shopId, long amount, int items) {
-        byId.computeIfPresent(shopId, (id, shop) -> new Shop(
-                shop.id(), shop.ownerId(), shop.ownerName(), shop.worldId(),
-                shop.x1(), shop.y1(), shop.z1(), shop.x2(), shop.y2(), shop.z2(),
-                shop.price(), Math.addExact(shop.earnedTotal(), amount), Math.addExact(shop.soldSlots(), 1),
-                Math.addExact(shop.soldItems(), items), shop.createdAt(), shop.active()));
+        synchronized (indexLock) {
+            byId.computeIfPresent(shopId, (id, shop) -> new Shop(
+                    shop.id(), shop.ownerId(), shop.ownerName(), shop.worldId(),
+                    shop.x1(), shop.y1(), shop.z1(), shop.x2(), shop.y2(), shop.z2(),
+                    shop.price(), Math.addExact(shop.earnedTotal(), amount), Math.addExact(shop.soldSlots(), 1),
+                    Math.addExact(shop.soldItems(), items), shop.createdAt(), shop.active()));
+        }
     }
+
+    public boolean tryReserve(UUID ownerId, int limit, Collection<ShopKey> keys) {
+        synchronized (indexLock) {
+            if (count(ownerId) + pendingByOwner.getOrDefault(ownerId, 0) >= limit) {
+                return false;
+            }
+            if (keys.stream().anyMatch(reserved::contains) || keys.stream().anyMatch(byBlock::containsKey)) {
+                return false;
+            }
+            reserved.addAll(keys);
+            keys.forEach(key -> reservationOwners.put(key, ownerId));
+            pendingByOwner.merge(ownerId, 1, Integer::sum);
+            return true;
+        }
+    }
+
+    public void release(UUID ownerId, Collection<ShopKey> keys) {
+        synchronized (indexLock) {
+            boolean released = false;
+            for (ShopKey key : keys) {
+                if (ownerId.equals(reservationOwners.get(key))) {
+                    reservationOwners.remove(key);
+                    reserved.remove(key);
+                    released = true;
+                }
+            }
+            if (released) {
+                pendingByOwner.computeIfPresent(ownerId, (id, count) -> count == 1 ? null : count - 1);
+            }
+        }
+    }
+
 }

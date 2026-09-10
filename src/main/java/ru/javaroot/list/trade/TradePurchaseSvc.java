@@ -71,7 +71,8 @@ class TradePurchaseSvc {
         ItemStack product = session.inventory.getItem(slot);
         ItemStack expected = session.snapshot.get(slot);
         if (shop == null || product == null || expected == null || !product.isSimilar(expected)
-                || product.getAmount() != expected.getAmount() || product.getAmount() != product.getMaxStackSize()) {
+                || product.getAmount() != expected.getAmount() || product.getAmount() < 1
+                || product.getAmount() > product.getMaxStackSize()) {
             return;
         }
         long paid = payment.paymentTotal(session);
@@ -94,7 +95,7 @@ class TradePurchaseSvc {
         session.destinationSlot = event.getRawSlot() - session.inventory.getSize();
         event.setCancelled(false);
         sched.entity(player, () -> completeManualPlacement(player, session),
-                () -> cancelPrepared(player, session, transactionId, Map.of()));
+                () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId, Map.of()));
     }
 
     void handlePendingDrag(InventoryDragEvent event, Player player, TradeSession session) {
@@ -108,7 +109,7 @@ class TradePurchaseSvc {
                                 session.pendingProduct)) {
                     returnPendingProduct(player, session);
                 }
-            }, () -> cancelPrepared(player, session, transactionId, Map.of()));
+            }, () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId, Map.of()));
             return;
         }
         if (!session.prepared || !isPendingPlacement(event, session)) {
@@ -117,7 +118,7 @@ class TradePurchaseSvc {
         session.destinationSlot = event.getRawSlots().iterator().next() - session.inventory.getSize();
         event.setCancelled(false);
         sched.entity(player, () -> completeManualPlacement(player, session),
-                () -> cancelPrepared(player, session, transactionId, Map.of()));
+                () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId, Map.of()));
     }
 
     void preparePurchase(Player player, TradeSession session, Shop shop, int slot, ItemStack product) {
@@ -156,7 +157,7 @@ class TradePurchaseSvc {
                         return;
                     }
                     cancelPrepared(player, session, transactionId, Map.of());
-                }, () -> cancelPrepared(player, session, transactionId, Map.of())))
+                }, () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId, Map.of())))
                 .exceptionally(error -> {
                     sched.entity(player, () -> failPreparation(player, session),
                             () -> finishPending(player.getUniqueId(), session));
@@ -341,6 +342,24 @@ class TradePurchaseSvc {
                     if (applied) {
                         sched.global(() -> Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
                                 transactionId, session.shop.id(), player.getUniqueId())));
+                    }
+                });
+    }
+
+    private void cancelPreparedRetired(UUID playerId, TradeSession session, UUID transactionId,
+                                       Map<Currency, Long> refund) {
+        if (sessions.get(playerId) == session && session.purchasePending
+                && transactionId != null && transactionId.equals(session.transactionId)) {
+            finishPending(playerId, session);
+        }
+        if (transactionId == null) {
+            return;
+        }
+        shopStore.rollback(transactionId.toString(), playerId, refund)
+                .thenAccept(applied -> {
+                    if (applied) {
+                        sched.global(() -> Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
+                                transactionId, session.shop.id(), playerId)));
                     }
                 });
     }

@@ -42,7 +42,9 @@ class ShopTransactionRepo {
                 statement.setLong(12, sellerPayout.getOrDefault(Currency.DEEPSLATE_DIAMOND_ORE, 0L));
                 statement.setString(13, adjustments);
                 statement.setLong(14, System.currentTimeMillis());
-                statement.executeUpdate();
+                if (statement.executeUpdate() != 1) {
+                    throw new SQLException("Transaction ID is already used");
+                }
             }
             return null;
         });
@@ -52,9 +54,15 @@ class ShopTransactionRepo {
                                              Map<Currency, Long> sellerPayout) {
         return db.submit(connection -> inTransaction(connection, () -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE transactions SET state = 'COMPLETED', completed_at = ? WHERE transaction_key = ? AND state = 'PREPARED'")) {
+                    "UPDATE transactions SET state = 'COMPLETED', completed_at = ? WHERE transaction_key = ? AND state = 'PREPARED' AND shop_id = ? AND seller_uuid = ? AND price = ? AND item_amount = ? AND seller_diamond_ore = ? AND seller_deepslate_diamond_ore = ?")) {
                 statement.setLong(1, System.currentTimeMillis());
                 statement.setString(2, transactionId);
+                statement.setLong(3, shop.id());
+                statement.setString(4, shop.ownerId().toString());
+                statement.setLong(5, shop.price());
+                statement.setInt(6, items);
+                statement.setLong(7, sellerPayout.getOrDefault(Currency.DIAMOND_ORE, 0L));
+                statement.setLong(8, sellerPayout.getOrDefault(Currency.DEEPSLATE_DIAMOND_ORE, 0L));
                 if (statement.executeUpdate() != 1) {
                     return false;
                 }
@@ -87,6 +95,18 @@ class ShopTransactionRepo {
                 statement.executeUpdate();
             }
             return null;
+        });
+    }
+
+    CompletableFuture<Boolean> delivered(String transactionId, UUID buyerId) {
+        return db.submit(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "UPDATE transactions SET state = 'DELIVERED', delivered_at = ? WHERE transaction_key = ? AND buyer_uuid = ? AND state = 'COMPLETED'")) {
+                statement.setLong(1, System.currentTimeMillis());
+                statement.setString(2, transactionId);
+                statement.setString(3, buyerId.toString());
+                return statement.executeUpdate() == 1;
+            }
         });
     }
 
@@ -211,6 +231,18 @@ class ShopTransactionRepo {
                 statement.executeUpdate();
             }
             return null;
+        });
+    }
+
+    CompletableFuture<Boolean> recoveryDelivered(long id, UUID playerId) {
+        return db.submit(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "UPDATE item_recovery SET delivered_at = ? WHERE id = ? AND player_uuid = ? AND delivered_at IS NULL")) {
+                statement.setLong(1, System.currentTimeMillis());
+                statement.setLong(2, id);
+                statement.setString(3, playerId.toString());
+                return statement.executeUpdate() == 1;
+            }
         });
     }
 

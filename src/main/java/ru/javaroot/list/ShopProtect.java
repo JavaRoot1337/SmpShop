@@ -19,6 +19,7 @@ import org.bukkit.event.entity.EntityPlaceEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import net.kyori.adventure.text.Component;
@@ -44,19 +45,19 @@ public class ShopProtect implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
-        if (shops.find(ShopKey.of(event.getBlock().getLocation())) != null) {
+        if (isShopBlock(event.getBlock())) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent event) {
-        event.blockList().removeIf(block -> shops.find(ShopKey.of(block.getLocation())) != null);
+        event.blockList().removeIf(this::isShopBlock);
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
-        event.blockList().removeIf(block -> shops.find(ShopKey.of(block.getLocation())) != null);
+        event.blockList().removeIf(this::isShopBlock);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -102,6 +103,13 @@ public class ShopProtect implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInventoryPickup(InventoryPickupItemEvent event) {
         if (isShopInventory(event.getInventory())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInventoryOpen(InventoryOpenEvent event) {
+        if (isReservedInventory(event.getInventory())) {
             event.setCancelled(true);
         }
     }
@@ -166,12 +174,31 @@ public class ShopProtect implements Listener {
         return false;
     }
 
+    private boolean isReservedInventory(Inventory inventory) {
+        InventoryHolder holder = inventory.getHolder();
+        if (holder instanceof Chest chest) {
+            return isReservedBlock(chest.getBlock());
+        }
+        if (holder instanceof DoubleChest doubleChest) {
+            return isReservedHolder(doubleChest.getLeftSide()) || isReservedHolder(doubleChest.getRightSide());
+        }
+        return false;
+    }
+
     private boolean isShopHolder(InventoryHolder holder) {
         return holder instanceof Chest chest && isShopBlock(chest.getBlock());
     }
 
+    private boolean isReservedHolder(InventoryHolder holder) {
+        return holder instanceof Chest chest && isReservedBlock(chest.getBlock());
+    }
+
     private boolean isShopBlock(Block block) {
-        return shops.find(ShopKey.of(block.getLocation())) != null;
+        return shops.isProtected(ShopKey.of(block.getLocation()));
+    }
+
+    private boolean isReservedBlock(Block block) {
+        return shops.isReserved(ShopKey.of(block.getLocation()));
     }
 
     private boolean isNearShop(Block block) {

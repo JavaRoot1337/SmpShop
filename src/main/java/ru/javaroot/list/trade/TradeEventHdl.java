@@ -11,7 +11,10 @@ import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -79,11 +82,11 @@ public class TradeEventHdl {
     }
 
     public boolean reserveRemoval(long shopId) {
-        return sessions.reserve(shopId);
+        return sessions.reserveRemoval(shopId);
     }
 
     public void releaseRemoval(long shopId) {
-        sessions.release(shopId);
+        sessions.releaseRemoval(shopId);
     }
 
     public void start() {
@@ -133,7 +136,12 @@ public class TradeEventHdl {
         TradeSession session = new TradeSession(shop, event.getInventory(), event.getView().title(),
                 new org.bukkit.Location(world, shop.x1(), shop.y1(), shop.z1()));
         if (sessions.reserve(shop.id())) {
-            sessions.put(player.getUniqueId(), session);
+            if (!sessions.putIfAbsent(player.getUniqueId(), session)) {
+                sessions.release(shop.id());
+                event.setCancelled(true);
+                msg.send(player, "shop-busy");
+                return;
+            }
             event.setCancelled(true);
             sched.entity(player, () -> {
                 if (sessions.get(player.getUniqueId()) == session) {
@@ -261,6 +269,22 @@ public class TradeEventHdl {
         }
     }
 
+    public void onInventoryPickup(InventoryPickupItemEvent event) {
+        if (delivery.isDeliveryItem(event.getItem().getItemStack())) {
+            event.setCancelled(true);
+        }
+    }
+
+    public void onEntityPickup(EntityPickupItemEvent event) {
+        if (delivery.isDeliveryItem(event.getItem().getItemStack())) {
+            event.setCancelled(true);
+        }
+    }
+
+    public void onDeath(PlayerDeathEvent event) {
+        event.getDrops().removeIf(delivery::isDeliveryItem);
+    }
+
     public void onSwapHands(PlayerSwapHandItemsEvent event) {
         if (delivery.isDeliveryItem(event.getMainHandItem()) || delivery.isDeliveryItem(event.getOffHandItem())
                 || delivery.isPendingItem(event.getPlayer(), event.getMainHandItem())
@@ -287,6 +311,9 @@ public class TradeEventHdl {
         Player player = event.getPlayer();
         shopStore.rolledBackTransactions(player.getUniqueId()).whenComplete((transactionIds, error) ->
                 sched.entity(player, () -> {
+                    if (sessions.get(player.getUniqueId()) != null) {
+                        return;
+                    }
                     delivery.removeTemporaryMarkers(player);
                     if (error != null) {
                         logger.log(Level.WARNING, "Не удалось очистить временные marker-ы игрока "

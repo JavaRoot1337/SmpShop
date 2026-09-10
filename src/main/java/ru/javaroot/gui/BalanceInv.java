@@ -27,6 +27,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -239,21 +240,76 @@ public class BalanceInv implements Listener {
     }
 
     private CompletableFuture<Void> settleAndUnlock(Session session, Player player) {
-        return settle(session, player).whenComplete((ignored, error) -> closing.remove(session.playerId));
+        CompletableFuture<Void> settled;
+        try {
+            settled = settle(session, player);
+        } catch (RuntimeException exception) {
+            settled = CompletableFuture.failedFuture(exception);
+        }
+        return settled.whenComplete((ignored, error) -> closing.remove(session.playerId));
     }
 
     private CompletableFuture<Void> settle(Session session, Player player) {
         EnumMap<Currency, Long> current = BalancePages.changedBalance(session.original, session.pages);
         List<ItemStack> invalid = BalancePages.invalidItems(session.pages.values());
-        returnItems(player, invalid);
+        long diamondDelta = Math.subtractExact(current.getOrDefault(Currency.DIAMOND_ORE, 0L),
+                session.original.diamondOre());
+        long deepslateDelta = Math.subtractExact(current.getOrDefault(Currency.DEEPSLATE_DIAMOND_ORE, 0L),
+                session.original.deepslateDiamondOre());
+        CompletableFuture<BalanceStore.MutationResult> settled;
+        try {
+            settled = balances.settle(session.operationId, session.playerId, diamondDelta, deepslateDelta);
+        } catch (RuntimeException exception) {
+            return recoverFailedSettle(session, player, invalid, diamondDelta, deepslateDelta, exception);
+        }
+        return settled.thenCompose(result -> {
+            if (result.status() == BalanceStore.MutationStatus.SUCCESS) {
+                returnItems(player, invalid);
+                return CompletableFuture.completedFuture(null);
+            }
+            return recoverFailedSettle(session, player, invalid, diamondDelta, deepslateDelta,
+                    new IllegalStateException("Balance changed during GUI session: " + result.status()));
+        });
+    }
 
-        long diamondDelta = current.getOrDefault(Currency.DIAMOND_ORE, 0L) - session.original.diamondOre();
-        long deepslateDelta = current.getOrDefault(Currency.DEEPSLATE_DIAMOND_ORE, 0L)
-                - session.original.deepslateDiamondOre();
-        return balances.settle(session.operationId, session.playerId, diamondDelta, deepslateDelta)
-                .thenCompose(result -> result.status() == BalanceStore.MutationStatus.SUCCESS
-                        ? CompletableFuture.completedFuture(null)
-                        : CompletableFuture.failedFuture(new IllegalStateException("Balance changed during GUI session")));
+    private CompletableFuture<Void> recoverFailedSettle(Session session, Player player, List<ItemStack> invalid,
+                                                        long diamondDelta, long deepslateDelta, Throwable failure) {
+        List<ItemStack> returned = new ArrayList<>(invalid);
+        if (diamondDelta > 0 && player != null && player.isOnline()) {
+            addReturnedStacks(returned, Currency.DIAMOND_ORE, diamondDelta);
+        }
+        if (deepslateDelta > 0 && player != null && player.isOnline()) {
+            addReturnedStacks(returned, Currency.DEEPSLATE_DIAMOND_ORE, deepslateDelta);
+        }
+        CompletableFuture<?> diamond = compensateFailedDelta(session, Currency.DIAMOND_ORE, diamondDelta, player);
+        CompletableFuture<?> deepslate = compensateFailedDelta(session, Currency.DEEPSLATE_DIAMOND_ORE,
+                deepslateDelta, player);
+        returnItems(player, returned);
+        return CompletableFuture.allOf(diamond, deepslate)
+                .thenCompose(ignored -> CompletableFuture.failedFuture(failure));
+    }
+
+    private CompletableFuture<?> compensateFailedDelta(Session session, Currency currency, long delta, Player player) {
+        if (delta == 0 || (delta > 0 && player != null && player.isOnline())) {
+            return CompletableFuture.completedFuture(null);
+        }
+        long amount = delta > 0 ? delta : -delta;
+        UUID operationId = UUID.nameUUIDFromBytes((session.operationId + ":" + currency)
+                .getBytes(StandardCharsets.UTF_8));
+        return balances.change(operationId, "smpshop:balance_gui_compensation", session.playerId, currency, amount)
+                .thenAccept(result -> {
+                    if (result.status() != BalanceStore.MutationStatus.SUCCESS) {
+                        throw new IllegalStateException("Balance compensation failed: " + result.status());
+                    }
+                });
+    }
+
+    private void addReturnedStacks(List<ItemStack> returned, Currency currency, long amount) {
+        while (amount > 0) {
+            int stack = (int) Math.min(64, amount);
+            returned.add(new ItemStack(currency.material(), stack));
+            amount -= stack;
+        }
     }
 
     private void returnItems(Player player, List<ItemStack> items) {

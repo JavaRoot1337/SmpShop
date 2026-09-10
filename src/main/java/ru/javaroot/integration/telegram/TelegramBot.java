@@ -18,6 +18,7 @@ import java.net.http.HttpRequest;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
@@ -33,11 +34,11 @@ public class TelegramBot {
     private final String api;
     private final AtomicBoolean polling = new AtomicBoolean();
     private final AtomicLong generation = new AtomicLong();
-    private long offset;
+    private volatile long offset;
     private ScheduledTask task;
-    private boolean warned;
-    private int failures;
-    private long nextPollAt;
+    private volatile boolean warned;
+    private volatile int failures;
+    private volatile long nextPollAt;
 
     public TelegramBot(Logger logger, LinkStore links, ExternalMsg messages, OtherMsg other, LoggerLoc loggerLoc,
                        String token, int pollSeconds, BoundedHttp http) {
@@ -95,7 +96,17 @@ public class TelegramBot {
                     .timeout(Duration.ofSeconds(15))
                     .GET()
                     .build();
-            BoundedHttp.Response response = http.send(request).join();
+            http.send(request).whenComplete((response, error) -> finishPoll(currentGeneration, response, error));
+        } catch (RuntimeException exception) {
+            finishPoll(currentGeneration, null, exception);
+        }
+    }
+
+    private void finishPoll(long currentGeneration, BoundedHttp.Response response, Throwable error) {
+        try {
+            if (error != null) {
+                throw new CompletionException(error);
+            }
             if (currentGeneration != generation.get()) {
                 return;
             }
@@ -118,7 +129,7 @@ public class TelegramBot {
                     handle(update);
                 }
             }
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             failures = Math.min(failures + 1, 6);
             nextPollAt = System.currentTimeMillis() + (1L << failures) * 1000L;
             warn(other.raw("telegram-poll-error", Map.of("error", "request failed")));

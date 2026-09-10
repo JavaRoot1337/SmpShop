@@ -10,6 +10,7 @@ import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MigrationTest {
     @Test
@@ -58,6 +59,19 @@ class MigrationTest {
                 assertEquals("DELIVERED", result.getString(1));
                 assertEquals(2, result.getLong(2));
             }
+        }
+    }
+
+    @Test
+    void rejectsDatabaseSchemaFromTheFuture() throws Exception {
+        try (var connection = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)");
+                statement.executeUpdate("INSERT INTO schema_migrations VALUES (12, 1)");
+            }
+
+            assertThrows(java.sql.SQLException.class,
+                    () -> new Migration().apply(connection, Path.of("future.db")));
         }
     }
 }

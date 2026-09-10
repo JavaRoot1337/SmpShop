@@ -72,6 +72,10 @@ public class ShopStore {
         return transactions.delivered(transactionId);
     }
 
+    public CompletableFuture<Boolean> delivered(String transactionId, UUID buyerId) {
+        return transactions.delivered(transactionId, buyerId);
+    }
+
     public CompletableFuture<Boolean> rollback(String transactionId, UUID buyerId,
                                                Map<Currency, Long> refund) {
         return rollback(transactionId, buyerId, refund, null, null, false);
@@ -105,6 +109,10 @@ public class ShopStore {
 
     public CompletableFuture<Void> recoveryDelivered(long id) {
         return transactions.recoveryDelivered(id);
+    }
+
+    public CompletableFuture<Boolean> recoveryDelivered(long id, UUID playerId) {
+        return transactions.recoveryDelivered(id, playerId);
     }
 
     public record ApiShopResult(String status, Shop shop, boolean applied) {
