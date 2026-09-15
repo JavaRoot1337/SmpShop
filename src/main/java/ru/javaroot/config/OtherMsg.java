@@ -12,15 +12,22 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import ru.javaroot.logersxd.Loggers;
 
 public class OtherMsg {
     private static final String RESOURCE = "message_other.yml";
 
     private final JavaPlugin plugin;
+    private final Loggers.Channel logger;
     private volatile FileConfiguration messages;
 
     public OtherMsg(JavaPlugin plugin) {
+        this(plugin, new Loggers(plugin.getLogger()).config());
+    }
+
+    public OtherMsg(JavaPlugin plugin, Loggers.Channel logger) {
         this.plugin = plugin;
+        this.logger = logger;
         reload();
     }
 
@@ -51,7 +58,7 @@ public class OtherMsg {
             } else {
                 fallback = fallback.replace("%key%", key);
             }
-            plugin.getLogger().warning(fallback);
+            logger.warning(fallback);
             return fallback;
         }
         return value;

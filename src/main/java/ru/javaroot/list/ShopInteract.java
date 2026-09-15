@@ -13,14 +13,17 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.DoubleChestInventory;
 import org.bukkit.inventory.InventoryHolder;
 import ru.javaroot.SmpShop;
+import ru.javaroot.command.PermissionKeys;
 import ru.javaroot.command.ShopCmd;
 import ru.javaroot.config.Msg;
 import ru.javaroot.config.Cfg;
+import ru.javaroot.config.DbLoc;
 import ru.javaroot.data.ShopStore;
 import ru.javaroot.scheduler.Sched;
 import ru.javaroot.shop.Shop;
 import ru.javaroot.shop.ShopKey;
 import ru.javaroot.shop.ShopMgr;
+import ru.javaroot.logersxd.Loggers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,17 +38,28 @@ public class ShopInteract implements Listener {
     private final ShopMgr shops;
     private final Sched sched;
     private final ShopTrade trade;
+    private final DbLoc dbMessages;
+    private final Loggers.Channel logger;
 
-    public ShopInteract(SmpShop plugin, ShopCmd command, Msg msg, Cfg cfg, ShopStore store,
-                        ShopMgr shops, Sched sched, ShopTrade trade) {
+    public ShopInteract(SmpShop plugin, ShopCmd command, Msg msg, Cfg cfg, DbLoc dbMessages,
+                        ShopStore store, ShopMgr shops, Sched sched, ShopTrade trade) {
+        this(plugin, command, msg, cfg, dbMessages, store, shops, sched, trade,
+                new Loggers(plugin.getLogger()).shop());
+    }
+
+    public ShopInteract(SmpShop plugin, ShopCmd command, Msg msg, Cfg cfg, DbLoc dbMessages,
+                        ShopStore store, ShopMgr shops, Sched sched, ShopTrade trade,
+                        Loggers.Channel logger) {
         this.plugin = plugin;
         this.command = command;
         this.msg = msg;
         this.cfg = cfg;
+        this.dbMessages = dbMessages;
         this.store = store;
         this.shops = shops;
         this.sched = sched;
         this.trade = trade;
+        this.logger = logger;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -68,12 +82,12 @@ public class ShopInteract implements Listener {
             return;
         }
         event.setCancelled(true);
-        if (action.type() == ShopCmd.ActionType.REMOVE && !player.hasPermission("smpshop.admin.remove")) {
+        if (action.type() == ShopCmd.ActionType.REMOVE && !player.hasPermission(PermissionKeys.ADMIN_REMOVE)) {
             msg.send(player, "no-permission");
             command.clearAction(player.getUniqueId());
             return;
         }
-        if (!player.hasPermission("smpshop.use")) {
+        if (!player.hasPermission(PermissionKeys.USE)) {
             msg.send(player, "no-permission");
             command.clearAction(player.getUniqueId());
             return;
@@ -94,7 +108,7 @@ public class ShopInteract implements Listener {
     private void place(Player player, Location location, ShopCmd.Action action) {
         List<Location> locations = chestLocations(location);
         List<ShopKey> keys = locations.stream().map(ShopKey::of).toList();
-        int limit = player.hasPermission("smpshop.plus") ? cfg.plusShopLimit() : cfg.regularShopLimit();
+        int limit = player.hasPermission(PermissionKeys.PLUS) ? cfg.plusShopLimit() : cfg.regularShopLimit();
         if (!shops.tryReserve(player.getUniqueId(), limit, keys)) {
             msg.send(player, "shop-conflict");
             command.clearAction(player.getUniqueId());
@@ -106,12 +120,13 @@ public class ShopInteract implements Listener {
                 locations.size() == 2 ? locations.get(1).getBlockX() : null,
                 locations.size() == 2 ? locations.get(1).getBlockY() : null,
                 locations.size() == 2 ? locations.get(1).getBlockZ() : null,
-                action.price(), 0, 0, 0, System.currentTimeMillis(), true);
+                action.price(), 0, 0, 0, System.currentTimeMillis());
         store.insert(draft).thenAccept(id -> {
             Runnable cleanup = () -> {
                 shops.release(player.getUniqueId(), keys);
                 store.delete(id).exceptionally(error -> {
-                    plugin.getLogger().warning("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‡РёСЃС‚РёС‚СЊ РјР°РіР°Р·РёРЅ: " + error.getMessage());
+                    logger.warning(dbMessages.raw("shop.cleanup-failed",
+                            Map.of("error", String.valueOf(error.getMessage()))));
                     return null;
                 });
             };
@@ -123,7 +138,7 @@ public class ShopInteract implements Listener {
                     sched.entity(player, () -> msg.send(player, "shop-conflict"));
                     return;
                 }
-                Shop shop = new Shop(id, draft.ownerId(), draft.ownerName(), draft.worldId(), draft.x1(), draft.y1(), draft.z1(), draft.x2(), draft.y2(), draft.z2(), draft.price(), 0, 0, 0, draft.createdAt(), true);
+                Shop shop = new Shop(id, draft.ownerId(), draft.ownerName(), draft.worldId(), draft.x1(), draft.y1(), draft.z1(), draft.x2(), draft.y2(), draft.z2(), draft.price(), 0, 0, 0, draft.createdAt());
                 if (sched.global(() -> {
                     try {
                         shops.add(shop);
@@ -131,7 +146,8 @@ public class ShopInteract implements Listener {
                         sched.entity(player, () -> msg.send(player, "shop-created", Map.of("price", shop.price())));
                     } catch (RuntimeException exception) {
                         cleanup.run();
-                        plugin.getLogger().warning("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°С‚СЊ РјР°РіР°Р·РёРЅ: " + exception.getMessage());
+                        logger.warning(dbMessages.raw("shop.registration-failed",
+                                Map.of("error", String.valueOf(exception.getMessage()))));
                     }
                 }) != Sched.ScheduleResult.SCHEDULED) {
                     cleanup.run();
@@ -143,7 +159,8 @@ public class ShopInteract implements Listener {
             }
         }).exceptionally(error -> {
             shops.release(player.getUniqueId(), keys);
-            plugin.getLogger().warning("Не удалось сохранить магазин: " + error.getMessage());
+            logger.warning(dbMessages.raw("shop.save-failed",
+                    Map.of("error", String.valueOf(error.getMessage()))));
             return null;
         });
     }
@@ -155,14 +172,15 @@ public class ShopInteract implements Listener {
             return;
         }
         store.delete(shop.id())
-                .thenRun(() -> {
-                shops.remove(shop);
-                sched.entity(player, () -> msg.send(player, "shop-deleted"));
-                })
+                .thenRun(() -> sched.global(() -> {
+                    shops.remove(shop);
+                    sched.entity(player, () -> msg.send(player, "shop-deleted"));
+                }))
                 .whenComplete((ignored, error) -> {
                     trade.releaseRemoval(shop.id());
                     if (error != null) {
-                        plugin.getLogger().warning("Не удалось удалить магазин: " + error.getMessage());
+                        logger.warning(dbMessages.raw("shop.delete-failed",
+                                Map.of("error", String.valueOf(error.getMessage()))));
                     }
                 });
     }

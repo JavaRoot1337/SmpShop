@@ -68,23 +68,12 @@ public class ShopStore {
         return transactions.completeSale(transactionId, shop, items, sellerPayout);
     }
 
-    public CompletableFuture<Void> delivered(String transactionId) {
-        return transactions.delivered(transactionId);
-    }
-
     public CompletableFuture<Boolean> delivered(String transactionId, UUID buyerId) {
         return transactions.delivered(transactionId, buyerId);
     }
 
-    public CompletableFuture<Boolean> rollback(String transactionId, UUID buyerId,
-                                               Map<Currency, Long> refund) {
-        return rollback(transactionId, buyerId, refund, null, null, false);
-    }
-
-    public CompletableFuture<Boolean> rollback(String transactionId, UUID buyerId,
-                                               Map<Currency, Long> refund, UUID sellerId,
-                                               byte[] itemSnapshot, boolean recoverItem) {
-        return transactions.rollback(transactionId, buyerId, refund, sellerId, itemSnapshot, recoverItem);
+    public CompletableFuture<Boolean> rollback(String transactionId, UUID buyerId, boolean recoverItem) {
+        return transactions.rollback(transactionId, buyerId, recoverItem);
     }
 
     public CompletableFuture<List<PendingDelivery>> pendingDeliveries(UUID buyerId) {
@@ -105,10 +94,6 @@ public class ShopStore {
 
     public CompletableFuture<List<RecoveryItem>> recoveryItems(UUID playerId) {
         return transactions.recoveryItems(playerId);
-    }
-
-    public CompletableFuture<Void> recoveryDelivered(long id) {
-        return transactions.recoveryDelivered(id);
     }
 
     public CompletableFuture<Boolean> recoveryDelivered(long id, UUID playerId) {

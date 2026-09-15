@@ -2,12 +2,14 @@ package ru.javaroot.data;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class NotificationStore {
+    private static final int MAX_BATCH_SIZE = 1000;
     private final Sqlite db;
 
     public NotificationStore(Sqlite db) {
@@ -15,6 +17,9 @@ public class NotificationStore {
     }
 
     public CompletableFuture<Void> add(UUID playerId, long amount, UUID transactionId) {
+        if (playerId == null || transactionId == null) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(db.message("notification.participants-invalid")));
+        }
         if (amount < 1) {
             return CompletableFuture.completedFuture(null);
         }
@@ -36,12 +41,16 @@ public class NotificationStore {
             List<Long> ids = new ArrayList<>();
             long amount = 0;
             try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT id, amount FROM notifications WHERE player_uuid = ? AND delivered_at IS NULL ORDER BY id")) {
+                    "SELECT id, amount FROM notifications WHERE player_uuid = ? AND delivered_at IS NULL ORDER BY id LIMIT " + MAX_BATCH_SIZE)) {
                 statement.setString(1, playerId.toString());
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
                         ids.add(result.getLong("id"));
-                        amount += result.getLong("amount");
+                        try {
+                            amount = Math.addExact(amount, result.getLong("amount"));
+                        } catch (ArithmeticException exception) {
+                            throw new SQLException(db.message("notification.amount-overflow"), exception);
+                        }
                     }
                 }
             }
@@ -52,6 +61,9 @@ public class NotificationStore {
     public CompletableFuture<Void> markDelivered(List<Long> ids) {
         if (ids.isEmpty()) {
             return CompletableFuture.completedFuture(null);
+        }
+        if (ids.size() > MAX_BATCH_SIZE) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(db.message("notification.batch-too-large")));
         }
         String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
         return db.submit(connection -> {

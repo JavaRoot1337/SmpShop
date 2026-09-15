@@ -5,13 +5,14 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
-import ru.javaroot.config.LoggerLoc;
+import ru.javaroot.config.DbLoc;
 import ru.javaroot.config.OtherMsg;
 import ru.javaroot.data.LinkStore;
 import ru.javaroot.integration.ExternalMsg;
 import ru.javaroot.integration.SaleLog;
 import ru.javaroot.integration.BoundedHttp;
 import ru.javaroot.scheduler.Sched;
+import ru.javaroot.logersxd.Loggers;
 
 import java.net.URI;
 import java.net.http.HttpRequest;
@@ -24,13 +25,15 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 public class TelegramBot {
-    private final Logger logger;
+    private final Loggers.Channel logger;
     private final LinkStore links;
     private final ExternalMsg messages;
     private final OtherMsg other;
-    private final LoggerLoc loggerLoc;
+    private final DbLoc dbLoc;
     private final BoundedHttp http;
     private final int pollSeconds;
+    private final int longPollSeconds;
+    private final int requestTimeoutSeconds;
     private final String api;
     private final AtomicBoolean polling = new AtomicBoolean();
     private final AtomicLong generation = new AtomicLong();
@@ -40,22 +43,32 @@ public class TelegramBot {
     private volatile int failures;
     private volatile long nextPollAt;
 
-    public TelegramBot(Logger logger, LinkStore links, ExternalMsg messages, OtherMsg other, LoggerLoc loggerLoc,
-                       String token, int pollSeconds, BoundedHttp http) {
+    public TelegramBot(Logger logger, LinkStore links, ExternalMsg messages, OtherMsg other, DbLoc dbLoc,
+                       String token, String apiBaseUrl, int pollSeconds, int longPollSeconds, int requestTimeoutSeconds,
+                       BoundedHttp http) {
+        this(new Loggers(logger).integrations(), links, messages, other, dbLoc, token, apiBaseUrl,
+                pollSeconds, longPollSeconds, requestTimeoutSeconds, http);
+    }
+
+    public TelegramBot(Loggers.Channel logger, LinkStore links, ExternalMsg messages, OtherMsg other, DbLoc dbLoc,
+                       String token, String apiBaseUrl, int pollSeconds, int longPollSeconds,
+                       int requestTimeoutSeconds, BoundedHttp http) {
         this.logger = logger;
         this.links = links;
         this.messages = messages;
         this.other = other;
-        this.loggerLoc = loggerLoc;
+        this.dbLoc = dbLoc;
         this.pollSeconds = Math.max(1, pollSeconds);
-        this.api = "https://api.telegram.org/bot" + token;
+        this.longPollSeconds = Math.max(0, longPollSeconds);
+        this.requestTimeoutSeconds = Math.max(1, requestTimeoutSeconds);
+        this.api = apiBaseUrl + token;
         this.http = http;
     }
 
     public void start(Sched sched) {
         long currentGeneration = generation.incrementAndGet();
         HttpRequest request = HttpRequest.newBuilder(URI.create(api + "/deleteWebhook?drop_pending_updates=false"))
-                .timeout(Duration.ofSeconds(15))
+                .timeout(Duration.ofSeconds(requestTimeoutSeconds))
                 .GET()
                 .build();
         http.send(request);
@@ -78,7 +91,7 @@ public class TelegramBot {
             }
             String text = messages.text("sale", Map.of(
                     "shop", sale.shopName(),
-                    "item", loggerLoc.name(sale.material()),
+                    "item", dbLoc.itemName(sale.material()),
                     "items", sale.items(),
                     "amount", sale.amount()
             ));
@@ -92,8 +105,9 @@ public class TelegramBot {
             return;
         }
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(api + "/getUpdates?timeout=1&offset=" + offset))
-                    .timeout(Duration.ofSeconds(15))
+            HttpRequest request = HttpRequest.newBuilder(URI.create(api + "/getUpdates?timeout="
+                            + longPollSeconds + "&offset=" + offset))
+                    .timeout(Duration.ofSeconds(requestTimeoutSeconds))
                     .GET()
                     .build();
             http.send(request).whenComplete((response, error) -> finishPoll(currentGeneration, response, error));
@@ -132,7 +146,7 @@ public class TelegramBot {
         } catch (RuntimeException exception) {
             failures = Math.min(failures + 1, 6);
             nextPollAt = System.currentTimeMillis() + (1L << failures) * 1000L;
-            warn(other.raw("telegram-poll-error", Map.of("error", "запрос не выполнен")));
+            warn(other.raw("telegram-poll-error", Map.of("error", other.raw("request-failed"))));
         } finally {
             polling.set(false);
         }
@@ -181,7 +195,7 @@ public class TelegramBot {
         body.addProperty("chat_id", chatId);
         body.addProperty("text", text);
         HttpRequest request = HttpRequest.newBuilder(URI.create(api + "/sendMessage"))
-                .timeout(Duration.ofSeconds(15))
+                .timeout(Duration.ofSeconds(requestTimeoutSeconds))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build();
@@ -190,7 +204,7 @@ public class TelegramBot {
                 warn(other.raw("telegram-message-http-error", Map.of("status", response.statusCode())));
             }
         }).exceptionally(error -> {
-            warn(other.raw("telegram-send-error", Map.of("error", "запрос не выполнен")));
+            warn(other.raw("telegram-send-error", Map.of("error", other.raw("request-failed"))));
             return null;
         });
     }

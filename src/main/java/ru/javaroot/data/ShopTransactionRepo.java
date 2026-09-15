@@ -15,6 +15,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 class ShopTransactionRepo {
+    private static final int MAX_SNAPSHOT_BYTES = 1024 * 1024;
+    private static final int MAX_ADJUSTMENTS_CHARS = 64 * 1024;
     private final Sqlite db;
 
     ShopTransactionRepo(Sqlite db) {
@@ -25,6 +27,13 @@ class ShopTransactionRepo {
                                          int itemSlot, int itemAmount, long price,
                                          Map<Currency, Long> payment, Map<Currency, Long> sellerPayout,
                                          byte[] itemSnapshot, String adjustments) {
+        if (transactionId == null || transactionId.isBlank() || transactionId.length() > 128
+                || shop == null || buyerId == null || itemSlot < 0 || itemAmount < 1 || itemAmount > 64
+                || price < 1 || itemSnapshot == null || itemSnapshot.length > MAX_SNAPSHOT_BYTES
+                || adjustments == null || adjustments.length() > MAX_ADJUSTMENTS_CHARS
+                || !validAmounts(payment) || !validAmounts(sellerPayout)) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(db.message("transaction.invalid-data")));
+        }
         return db.submit(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "INSERT INTO transactions(transaction_key, shop_id, buyer_uuid, seller_uuid, state, price, diamond_ore_amount, deepslate_diamond_ore_amount, item_slot, item_snapshot, item_amount, seller_diamond_ore, seller_deepslate_diamond_ore, adjustments_json, created_at) VALUES (?, ?, ?, ?, 'PREPARED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(transaction_key) DO NOTHING")) {
@@ -43,7 +52,7 @@ class ShopTransactionRepo {
                 statement.setString(13, adjustments);
                 statement.setLong(14, System.currentTimeMillis());
                 if (statement.executeUpdate() != 1) {
-                    throw new SQLException("Идентификатор транзакции уже использован");
+                    throw new SQLException(db.message("transaction.id-used"));
                 }
             }
             return null;
@@ -52,7 +61,11 @@ class ShopTransactionRepo {
 
     CompletableFuture<Boolean> completeSale(String transactionId, Shop shop, int items,
                                              Map<Currency, Long> sellerPayout) {
-        return db.submit(connection -> inTransaction(connection, () -> {
+        if (transactionId == null || transactionId.isBlank() || transactionId.length() > 128
+                || shop == null || items < 1 || items > 64 || !validAmounts(sellerPayout)) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(db.message("transaction.completion-invalid")));
+        }
+        return db.submit(connection -> db.transaction(connection, () -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE transactions SET state = 'COMPLETED', completed_at = ? WHERE transaction_key = ? AND state = 'PREPARED' AND shop_id = ? AND seller_uuid = ? AND price = ? AND item_amount = ? AND seller_diamond_ore = ? AND seller_deepslate_diamond_ore = ?")) {
                 statement.setLong(1, System.currentTimeMillis());
@@ -76,7 +89,7 @@ class ShopTransactionRepo {
                 statement.setLong(5, Long.MAX_VALUE);
                 statement.setLong(6, Long.MAX_VALUE - items);
                 if (statement.executeUpdate() != 1) {
-                    throw new SQLException("Магазин больше не активен или статистика переполнена");
+                    throw new SQLException(db.message("shop.inactive-or-statistics-overflow"));
                 }
             }
             for (Map.Entry<Currency, Long> entry : sellerPayout.entrySet()) {
@@ -84,18 +97,6 @@ class ShopTransactionRepo {
             }
             return true;
         }));
-    }
-
-    CompletableFuture<Void> delivered(String transactionId) {
-        return db.submit(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE transactions SET state = 'DELIVERED', delivered_at = ? WHERE transaction_key = ? AND state = 'COMPLETED'")) {
-                statement.setLong(1, System.currentTimeMillis());
-                statement.setString(2, transactionId);
-                statement.executeUpdate();
-            }
-            return null;
-        });
     }
 
     CompletableFuture<Boolean> delivered(String transactionId, UUID buyerId) {
@@ -110,23 +111,39 @@ class ShopTransactionRepo {
         });
     }
 
-    CompletableFuture<Boolean> rollback(String transactionId, UUID buyerId,
-                                        Map<Currency, Long> refund, UUID sellerId,
-                                        byte[] itemSnapshot, boolean recoverItem) {
-        return db.submit(connection -> inTransaction(connection, () -> {
+    CompletableFuture<Boolean> rollback(String transactionId, UUID buyerId, boolean recoverItem) {
+        return db.submit(connection -> db.transaction(connection, () -> {
+            UUID storedSeller;
+            byte[] storedItem;
+            long diamondRefund;
+            long deepslateRefund;
+            try (PreparedStatement query = connection.prepareStatement(
+                    "SELECT seller_uuid, item_snapshot, diamond_ore_amount, deepslate_diamond_ore_amount FROM transactions WHERE transaction_key = ? AND buyer_uuid = ? AND state = 'PREPARED'")) {
+                query.setString(1, transactionId);
+                query.setString(2, buyerId.toString());
+                try (ResultSet result = query.executeQuery()) {
+                    if (!result.next()) {
+                        return false;
+                    }
+                    storedSeller = UUID.fromString(result.getString("seller_uuid"));
+                    storedItem = result.getBytes("item_snapshot");
+                    diamondRefund = result.getLong("diamond_ore_amount");
+                    deepslateRefund = result.getLong("deepslate_diamond_ore_amount");
+                }
+            }
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = ? WHERE transaction_key = ? AND state = 'PREPARED'")) {
+                    "UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = ? WHERE transaction_key = ? AND buyer_uuid = ? AND state = 'PREPARED'")) {
                 statement.setLong(1, System.currentTimeMillis());
                 statement.setString(2, transactionId);
+                statement.setString(3, buyerId.toString());
                 if (statement.executeUpdate() != 1) {
                     return false;
                 }
             }
-            for (Map.Entry<Currency, Long> entry : refund.entrySet()) {
-                deposit(connection, buyerId, entry.getKey(), entry.getValue());
-            }
+            deposit(connection, buyerId, Currency.DIAMOND_ORE, diamondRefund);
+            deposit(connection, buyerId, Currency.DEEPSLATE_DIAMOND_ORE, deepslateRefund);
             if (recoverItem) {
-                addRecovery(connection, transactionId, sellerId, itemSnapshot);
+                addRecovery(connection, transactionId, storedSeller, storedItem);
             }
             return true;
         }));
@@ -186,11 +203,12 @@ class ShopTransactionRepo {
 
     CompletableFuture<Boolean> recoverRollback(ShopStore.PreparedTransaction transaction,
                                                 boolean recoverItem) {
-        return db.submit(connection -> inTransaction(connection, () -> {
+        return db.submit(connection -> db.transaction(connection, () -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = ? WHERE transaction_key = ? AND state = 'PREPARED'")) {
+                    "UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = ? WHERE transaction_key = ? AND buyer_uuid = ? AND state = 'PREPARED'")) {
                 statement.setLong(1, System.currentTimeMillis());
                 statement.setString(2, transaction.transactionId());
+                statement.setString(3, transaction.buyerId().toString());
                 if (statement.executeUpdate() != 1) {
                     return false;
                 }
@@ -222,18 +240,6 @@ class ShopTransactionRepo {
         });
     }
 
-    CompletableFuture<Void> recoveryDelivered(long id) {
-        return db.submit(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE item_recovery SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL")) {
-                statement.setLong(1, System.currentTimeMillis());
-                statement.setLong(2, id);
-                statement.executeUpdate();
-            }
-            return null;
-        });
-    }
-
     CompletableFuture<Boolean> recoveryDelivered(long id, UUID playerId) {
         return db.submit(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
@@ -258,15 +264,27 @@ class ShopTransactionRepo {
             statement.setLong(4, System.currentTimeMillis());
             statement.setLong(5, Long.MAX_VALUE);
             if (statement.executeUpdate() != 1) {
-                throw new SQLException("Переполнение баланса");
+                throw new SQLException(db.message("balance.overflow"));
             }
         }
+    }
+
+    private boolean validAmounts(Map<Currency, Long> amounts) {
+        if (amounts == null) {
+            return false;
+        }
+        for (Long amount : amounts.values()) {
+            if (amount == null || amount < 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void addRecovery(Connection connection, String transactionId, UUID playerId,
                              byte[] itemSnapshot) throws SQLException {
         if (playerId == null || itemSnapshot == null) {
-            throw new SQLException("Отсутствуют данные для восстановления предмета");
+            throw new SQLException(db.message("recovery.data-missing"));
         }
         try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO item_recovery(transaction_id, player_uuid, item_snapshot, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(transaction_id) DO NOTHING")) {
@@ -278,27 +296,4 @@ class ShopTransactionRepo {
         }
     }
 
-    private <T> T inTransaction(Connection connection, SqlAction<T> action) throws SQLException {
-        boolean autoCommit = connection.getAutoCommit();
-        connection.setAutoCommit(false);
-        try {
-            T result = action.run();
-            connection.commit();
-            return result;
-        } catch (SQLException | RuntimeException exception) {
-            try {
-                connection.rollback();
-            } catch (SQLException rollbackError) {
-                exception.addSuppressed(rollbackError);
-            }
-            throw exception;
-        } finally {
-            connection.setAutoCommit(autoCommit);
-        }
-    }
-
-    @FunctionalInterface
-    private interface SqlAction<T> {
-        T run() throws SQLException;
-    }
 }

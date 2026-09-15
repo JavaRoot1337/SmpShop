@@ -58,6 +58,7 @@ class ApiShopSvc {
     }
 
     void clearOperations() {
+        operations.values().forEach(operation -> operation.complete(new ShopResult(ApiStatus.SHUTTING_DOWN, null)));
         operations.clear();
     }
 
@@ -71,7 +72,8 @@ class ApiShopSvc {
         if (request.ownerName().isBlank()
                 || request.price() < cfg.minPrice() || request.price() > cfg.maxPrice()
                 || (request.second() != null
-                && !request.second().worldId().equals(request.first().worldId()))) {
+                && (!request.second().worldId().equals(request.first().worldId())
+                || request.second().equals(request.first())))) {
             return status(request.operationId(), request.source().asString(), hash,
                     "CREATE", ApiStatus.INVALID_INPUT, null);
         }
@@ -345,7 +347,7 @@ class ApiShopSvc {
         return new Shop(0, request.ownerId(), request.ownerName(), first.worldId(), first.x(), first.y(), first.z(),
                 second == null ? null : second.x(), second == null ? null : second.y(),
                 second == null ? null : second.z(), request.price(), 0, 0, 0,
-                System.currentTimeMillis(), true);
+                System.currentTimeMillis());
     }
 
     private List<ShopKey> keys(ShopCreate request) {

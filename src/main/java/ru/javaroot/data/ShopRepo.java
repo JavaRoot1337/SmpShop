@@ -49,7 +49,7 @@ class ShopRepo {
 
     CompletableFuture<ShopStore.ApiShopResult> apiCreate(UUID operationId, String source,
                                                           String requestHash, Shop shop) {
-        return db.submit(connection -> inTransaction(connection, () -> {
+        return db.submit(connection -> db.transaction(connection, () -> {
             ShopStore.ApiShopResult prior = apiOperation(connection, operationId, source, requestHash);
             if (prior != null) {
                 return prior;
@@ -57,7 +57,7 @@ class ShopRepo {
             long id = insert(connection, shop);
             Shop created = new Shop(id, shop.ownerId(), shop.ownerName(), shop.worldId(),
                     shop.x1(), shop.y1(), shop.z1(), shop.x2(), shop.y2(), shop.z2(), shop.price(),
-                    shop.earnedTotal(), shop.soldSlots(), shop.soldItems(), shop.createdAt(), true);
+                    shop.earnedTotal(), shop.soldSlots(), shop.soldItems(), shop.createdAt());
             recordApiOperation(connection, operationId, source, requestHash, "CREATE", "SUCCESS", id);
             return new ShopStore.ApiShopResult("SUCCESS", created, true);
         }));
@@ -71,7 +71,7 @@ class ShopRepo {
     CompletableFuture<ShopStore.ApiShopResult> apiStatus(UUID operationId, String source,
                                                           String requestHash, String type,
                                                           String status, Long shopId) {
-        return db.submit(connection -> inTransaction(connection, () -> {
+        return db.submit(connection -> db.transaction(connection, () -> {
             ShopStore.ApiShopResult prior = apiOperation(connection, operationId, source, requestHash);
             if (prior != null) {
                 return prior;
@@ -83,7 +83,7 @@ class ShopRepo {
 
     CompletableFuture<ShopStore.ApiShopResult> apiUpdatePrice(UUID operationId, String source,
                                                                String requestHash, long shopId, int price) {
-        return db.submit(connection -> inTransaction(connection, () -> {
+        return db.submit(connection -> db.transaction(connection, () -> {
             ShopStore.ApiShopResult prior = apiOperation(connection, operationId, source, requestHash);
             if (prior != null) {
                 return prior;
@@ -102,7 +102,7 @@ class ShopRepo {
 
     CompletableFuture<ShopStore.ApiShopResult> apiDelete(UUID operationId, String source,
                                                           String requestHash, long shopId) {
-        return db.submit(connection -> inTransaction(connection, () -> {
+        return db.submit(connection -> db.transaction(connection, () -> {
             ShopStore.ApiShopResult prior = apiOperation(connection, operationId, source, requestHash);
             if (prior != null) {
                 return prior;
@@ -123,6 +123,7 @@ class ShopRepo {
     }
 
     private long insert(Connection connection, Shop shop) throws SQLException {
+        ensureCoordinatesFree(connection, shop);
         try (PreparedStatement statement = connection.prepareStatement("INSERT INTO shops(owner_uuid, owner_name, world_uuid, x1, y1, z1, x2, y2, z2, price, earned_total, sold_slots, sold_items, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, shop.ownerId().toString());
             statement.setString(2, shop.ownerName());
@@ -141,9 +142,45 @@ class ShopRepo {
             statement.executeUpdate();
             try (ResultSet keys = statement.getGeneratedKeys()) {
                 if (!keys.next()) {
-                    throw new SQLException("SQLite не вернул идентификатор магазина");
+                    throw new SQLException(db.message("shop.id-not-returned"));
                 }
                 return keys.getLong(1);
+            }
+        }
+    }
+
+    private void ensureCoordinatesFree(Connection connection, Shop shop) throws SQLException {
+        if (shop.secondKey() != null && shop.firstKey().equals(shop.secondKey())) {
+            throw new SQLException(db.message("shop.coordinate-used"));
+        }
+        List<int[]> coordinates = new ArrayList<>();
+        coordinates.add(new int[]{shop.x1(), shop.y1(), shop.z1()});
+        if (shop.x2() != null) {
+            coordinates.add(new int[]{shop.x2(), shop.y2(), shop.z2()});
+        }
+        StringBuilder sql = new StringBuilder("SELECT 1 FROM shops WHERE deleted_at IS NULL AND world_uuid = ? AND (");
+        for (int i = 0; i < coordinates.size(); i++) {
+            if (i > 0) {
+                sql.append(" OR ");
+            }
+            sql.append("(x1 = ? AND y1 = ? AND z1 = ?) OR (x2 = ? AND y2 = ? AND z2 = ?)");
+        }
+        sql.append(") LIMIT 1");
+        try (PreparedStatement statement = connection.prepareStatement(sql.toString())) {
+            int index = 1;
+            statement.setString(index++, shop.worldId().toString());
+            for (int[] coordinate : coordinates) {
+                for (int value : coordinate) {
+                    statement.setInt(index++, value);
+                }
+                for (int value : coordinate) {
+                    statement.setInt(index++, value);
+                }
+            }
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next()) {
+                    throw new SQLException(db.message("shop.coordinate-used"));
+                }
             }
         }
     }
@@ -197,25 +234,6 @@ class ShopRepo {
         }
     }
 
-    private <T> T inTransaction(Connection connection, SqlAction<T> action) throws SQLException {
-        boolean autoCommit = connection.getAutoCommit();
-        connection.setAutoCommit(false);
-        try {
-            T result = action.run();
-            connection.commit();
-            return result;
-        } catch (SQLException | RuntimeException exception) {
-            try {
-                connection.rollback();
-            } catch (SQLException rollbackError) {
-                exception.addSuppressed(rollbackError);
-            }
-            throw exception;
-        } finally {
-            connection.setAutoCommit(autoCommit);
-        }
-    }
-
     private Shop read(ResultSet result) throws SQLException {
         return new Shop(
                 result.getLong("id"),
@@ -232,8 +250,7 @@ class ShopRepo {
                 result.getLong("earned_total"),
                 result.getLong("sold_slots"),
                 result.getLong("sold_items"),
-                result.getLong("created_at"),
-                true
+                result.getLong("created_at")
         );
     }
 
@@ -250,8 +267,4 @@ class ShopRepo {
         return result.wasNull() ? null : value;
     }
 
-    @FunctionalInterface
-    private interface SqlAction<T> {
-        T run() throws SQLException;
-    }
 }

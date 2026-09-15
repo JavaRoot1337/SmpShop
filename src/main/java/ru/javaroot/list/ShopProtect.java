@@ -22,8 +22,8 @@ import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import ru.javaroot.config.OtherMsg;
+import ru.javaroot.logersxd.Loggers;
 import ru.javaroot.scheduler.Sched;
 import ru.javaroot.shop.Shop;
 import ru.javaroot.shop.ShopKey;
@@ -35,12 +35,18 @@ import java.util.logging.Logger;
 public class ShopProtect implements Listener {
     private final ShopMgr shops;
     private final Sched sched;
-    private final Logger logger;
+    private final Loggers.Channel logger;
+    private final OtherMsg other;
 
-    public ShopProtect(ShopMgr shops, Sched sched, Logger logger) {
+    public ShopProtect(ShopMgr shops, Sched sched, Logger logger, OtherMsg other) {
+        this(shops, sched, new Loggers(logger).shop(), other);
+    }
+
+    public ShopProtect(ShopMgr shops, Sched sched, Loggers.Channel logger, OtherMsg other) {
         this.shops = shops;
         this.sched = sched;
         this.logger = logger;
+        this.other = other;
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -114,53 +120,22 @@ public class ShopProtect implements Listener {
         }
     }
 
-    public void clearShopNames(Collection<Shop> loadedShops) {
-        for (Shop shop : loadedShops) {
-            clearName(shop.worldId(), shop.x1(), shop.y1(), shop.z1());
-            if (shop.x2() != null) {
-                clearName(shop.worldId(), shop.x2(), shop.y2(), shop.z2());
-            }
-        }
-    }
-
     public void audit(Collection<Shop> loadedShops) {
         for (Shop shop : loadedShops) {
             sched.global(() -> {
                 org.bukkit.World world = org.bukkit.Bukkit.getWorld(shop.worldId());
                 if (world == null) {
-                    logger.warning("Магазин #" + shop.id() + " ссылается на отсутствующий мир");
+                    logger.warning(other.raw("shop-missing-world", java.util.Map.of("shop", shop.id())));
                     return;
                 }
                 Location location = new Location(world, shop.x1(), shop.y1(), shop.z1());
                 sched.region(location, () -> {
                     if (location.getBlock().getType() != Material.CHEST) {
-                        logger.warning("Магазин #" + shop.id() + " ссылается на отсутствующий сундук");
+                        logger.warning(other.raw("shop-missing-chest", java.util.Map.of("shop", shop.id())));
                     }
                 });
             });
         }
-    }
-
-    private void clearName(java.util.UUID worldId, int x, int y, int z) {
-        sched.global(() -> {
-            org.bukkit.World world = org.bukkit.Bukkit.getWorld(worldId);
-            if (world == null) {
-                return;
-            }
-            Location location = new Location(world, x, y, z);
-            sched.region(location, () -> {
-                Block block = location.getBlock();
-                if (block.getType() != Material.CHEST) {
-                    return;
-                }
-                Chest chest = (Chest) block.getState();
-                Component name = chest.customName();
-                if (name != null && PlainTextComponentSerializer.plainText().serialize(name).startsWith("Магазин игрока: ")) {
-                    chest.customName(null);
-                    chest.update(true, false);
-                }
-            });
-        });
     }
 
     private boolean isShopInventory(Inventory inventory) {

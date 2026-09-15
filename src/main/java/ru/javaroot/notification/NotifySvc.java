@@ -6,12 +6,14 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import ru.javaroot.config.Cfg;
+import ru.javaroot.config.DbLoc;
 import ru.javaroot.config.Msg;
 import ru.javaroot.config.OtherMsg;
 import ru.javaroot.data.NotificationStore;
 import ru.javaroot.integration.SaleLog;
 import ru.javaroot.item.ItemName;
 import ru.javaroot.scheduler.Sched;
+import ru.javaroot.logersxd.Loggers;
 import ru.javaroot.sound.SoundSvc;
 
 import java.util.Map;
@@ -20,22 +22,34 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class NotifySvc implements Listener {
-    private final Logger logger;
+    private final Loggers.Channel logger;
     private final Cfg cfg;
     private final Msg msg;
     private final OtherMsg other;
+    private final DbLoc dbLoc;
     private final NotificationStore store;
     private final SoundSvc sounds;
     private final ItemName itemNames;
     private final Sched sched;
     private volatile boolean ready;
 
-    public NotifySvc(Logger logger, Cfg cfg, Msg msg, OtherMsg other, NotificationStore store, SoundSvc sounds,
+    public NotifySvc(Logger logger, Cfg cfg, Msg msg, OtherMsg other, DbLoc dbLoc, NotificationStore store, SoundSvc sounds,
                      ItemName itemNames, Sched sched) {
+        this(new Loggers(logger).notifications(), cfg, msg, other, dbLoc, store, sounds, itemNames, sched);
+    }
+
+    public NotifySvc(Loggers logs, Cfg cfg, Msg msg, OtherMsg other, DbLoc dbLoc, NotificationStore store,
+                     SoundSvc sounds, ItemName itemNames, Sched sched) {
+        this(logs.notifications(), cfg, msg, other, dbLoc, store, sounds, itemNames, sched);
+    }
+
+    public NotifySvc(Loggers.Channel logger, Cfg cfg, Msg msg, OtherMsg other, DbLoc dbLoc,
+                     NotificationStore store, SoundSvc sounds, ItemName itemNames, Sched sched) {
         this.logger = logger;
         this.cfg = cfg;
         this.msg = msg;
         this.other = other;
+        this.dbLoc = dbLoc;
         this.store = store;
         this.sounds = sounds;
         this.itemNames = itemNames;
@@ -93,12 +107,12 @@ public class NotifySvc implements Listener {
                 }
                 msg.send(player, "offline-sales", Map.of("amount", pending.amount()));
                 store.markDelivered(pending.ids()).exceptionally(error -> {
-                    logger.log(Level.WARNING, other.raw("notification-delivery-error"), error);
+                    logger.log(Level.WARNING, dbLoc.raw("notification.delivery-failed"), error);
                     return null;
                 });
             });
         }).exceptionally(error -> {
-            logger.log(Level.WARNING, other.raw("notification-load-error"), error);
+            logger.log(Level.WARNING, dbLoc.raw("notification.load-failed"), error);
             return null;
         });
     }
@@ -108,7 +122,7 @@ public class NotifySvc implements Listener {
             return;
         }
         store.add(playerId, amount, transactionId).exceptionally(error -> {
-            logger.log(Level.WARNING, other.raw("notification-save-error"), error);
+            logger.log(Level.WARNING, dbLoc.raw("notification.save-failed"), error);
             return null;
         });
     }

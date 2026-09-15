@@ -16,13 +16,16 @@ import ru.javaroot.integration.IntegrationHub;
 import ru.javaroot.scheduler.Sched;
 import ru.javaroot.sound.SoundSvc;
 import ru.javaroot.shop.ShopMgr;
+import ru.javaroot.logersxd.Loggers;
 
 import java.util.Map;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ShopCmd implements CommandExecutor {
     private final SmpShop plugin;
+    private final Loggers.Channel logger;
     private final Cfg cfg;
     private final Msg msg;
     private final OtherMsg other;
@@ -36,7 +39,15 @@ public class ShopCmd implements CommandExecutor {
 
     public ShopCmd(SmpShop plugin, Cfg cfg, Msg msg, OtherMsg other, ShopMgr shops, Sched sched,
                    IntegrationHub integrations, SoundSvc sounds, BalanceInv balanceGui, ShopListInv listGui) {
+        this(plugin, cfg, msg, other, new Loggers(plugin.getLogger()).config(), shops, sched,
+                integrations, sounds, balanceGui, listGui);
+    }
+
+    public ShopCmd(SmpShop plugin, Cfg cfg, Msg msg, OtherMsg other, Loggers.Channel logger,
+                   ShopMgr shops, Sched sched, IntegrationHub integrations, SoundSvc sounds,
+                   BalanceInv balanceGui, ShopListInv listGui) {
         this.plugin = plugin;
+        this.logger = logger;
         this.cfg = cfg;
         this.msg = msg;
         this.other = other;
@@ -54,7 +65,7 @@ public class ShopCmd implements CommandExecutor {
             sender.sendMessage(msg.text("no-player"));
             return true;
         }
-        if (!player.hasPermission("smpshop.use")) {
+        if (!player.hasPermission(PermissionKeys.USE)) {
             msg.send(player, "no-permission");
             return true;
         }
@@ -70,7 +81,7 @@ public class ShopCmd implements CommandExecutor {
             msg.send(player, "loading");
             return true;
         }
-        switch (args[0].toLowerCase()) {
+        switch (args[0].toLowerCase(Locale.ROOT)) {
             case "set" -> set(player, args);
             case "balance" -> balance(player);
             case "delete" -> beginAction(player, ActionType.DELETE, "shop-delete-pending");
@@ -112,7 +123,7 @@ public class ShopCmd implements CommandExecutor {
             msg.send(player, "price-range", Map.of("min", cfg.minPrice(), "max", cfg.maxPrice()));
             return;
         }
-        int limit = player.hasPermission("smpshop.plus") ? cfg.plusShopLimit() : cfg.regularShopLimit();
+        int limit = player.hasPermission(PermissionKeys.PLUS) ? cfg.plusShopLimit() : cfg.regularShopLimit();
         if (shops.count(player.getUniqueId()) >= limit) {
             msg.send(player, "shop-limit", Map.of("limit", limit));
             return;
@@ -122,7 +133,7 @@ public class ShopCmd implements CommandExecutor {
     }
 
     private void balance(Player player) {
-        if (!player.hasPermission("smpshop.balance")) {
+        if (!player.hasPermission(PermissionKeys.BALANCE)) {
             msg.send(player, "no-permission");
             return;
         }
@@ -130,7 +141,7 @@ public class ShopCmd implements CommandExecutor {
     }
 
     private void remove(Player player) {
-        if (!player.hasPermission("smpshop.admin.remove")) {
+        if (!player.hasPermission(PermissionKeys.ADMIN_REMOVE)) {
             msg.send(player, "no-permission");
             return;
         }
@@ -140,7 +151,7 @@ public class ShopCmd implements CommandExecutor {
     private void list(Player player, String[] args) {
         UUID ownerId = player.getUniqueId();
         if (args.length > 1) {
-            if (!player.hasPermission("smpshop.admin.list")) {
+            if (!player.hasPermission(PermissionKeys.ADMIN_LIST)) {
                 msg.send(player, "no-permission");
                 return;
             }
@@ -155,7 +166,7 @@ public class ShopCmd implements CommandExecutor {
     }
 
     private void link(Player player, String[] args) {
-        if (!player.hasPermission("smpshop.link")) {
+        if (!player.hasPermission(PermissionKeys.LINK)) {
             msg.send(player, "no-permission");
             return;
         }
@@ -201,7 +212,7 @@ public class ShopCmd implements CommandExecutor {
     }
 
     private void reload(Player player) {
-        if (!player.hasPermission("smpshop.admin.reload")) {
+        if (!player.hasPermission(PermissionKeys.ADMIN_RELOAD)) {
             msg.send(player, "no-permission");
             return;
         }
@@ -238,7 +249,8 @@ public class ShopCmd implements CommandExecutor {
                     exception.addSuppressed(restoreError);
                 }
             }
-            plugin.getLogger().warning("Не удалось перезагрузить конфигурацию: " + exception.getMessage());
+            logger.warning(other.raw("config-reload-failed",
+                    java.util.Map.of("error", String.valueOf(exception.getMessage()))));
             sched.entity(player, () -> msg.send(player, "reload-failed"));
         }
     }
@@ -253,7 +265,7 @@ public class ShopCmd implements CommandExecutor {
     }
 
     private boolean validArguments(String[] args) {
-        return switch (args[0].toLowerCase()) {
+        return switch (args[0].toLowerCase(Locale.ROOT)) {
             case "set" -> args.length == 2;
             case "balance", "delete", "remove", "reload" -> args.length == 1;
             case "list" -> args.length == 1 || args.length == 2;

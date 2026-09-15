@@ -2,11 +2,12 @@ package ru.javaroot.integration.discord;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonArray;
-import ru.javaroot.config.LoggerLoc;
+import ru.javaroot.config.DbLoc;
 import ru.javaroot.config.OtherMsg;
 import ru.javaroot.integration.ExternalMsg;
 import ru.javaroot.integration.SaleLog;
 import ru.javaroot.integration.BoundedHttp;
+import ru.javaroot.logersxd.Loggers;
 
 import java.net.URI;
 import java.net.http.HttpRequest;
@@ -16,20 +17,27 @@ import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
 public class DiscordWebhook {
-    private final Logger logger;
+    private final Loggers.Channel logger;
     private final String webhook;
     private final ExternalMsg messages;
     private final OtherMsg other;
-    private final LoggerLoc loggerLoc;
+    private final DbLoc dbLoc;
+    private final int requestTimeoutSeconds;
     private final BoundedHttp http;
 
     public DiscordWebhook(Logger logger, String webhook, ExternalMsg messages, OtherMsg other,
-                          LoggerLoc loggerLoc, BoundedHttp http) {
+                          DbLoc dbLoc, int requestTimeoutSeconds, BoundedHttp http) {
+        this(new Loggers(logger).integrations(), webhook, messages, other, dbLoc, requestTimeoutSeconds, http);
+    }
+
+    public DiscordWebhook(Loggers.Channel logger, String webhook, ExternalMsg messages, OtherMsg other,
+                          DbLoc dbLoc, int requestTimeoutSeconds, BoundedHttp http) {
         this.logger = logger;
         this.webhook = webhook;
         this.messages = messages;
         this.other = other;
-        this.loggerLoc = loggerLoc;
+        this.dbLoc = dbLoc;
+        this.requestTimeoutSeconds = Math.max(1, requestTimeoutSeconds);
         this.http = http;
     }
 
@@ -52,7 +60,7 @@ public class DiscordWebhook {
     public CompletableFuture<Boolean> sale(SaleLog sale) {
         return send(messages.text("sale", Map.of(
                 "shop", sale.shopName(),
-                "item", loggerLoc.name(sale.material()),
+                "item", dbLoc.itemName(sale.material()),
                 "items", sale.items(),
                 "amount", sale.amount()
         )));
@@ -65,7 +73,7 @@ public class DiscordWebhook {
         allowedMentions.add("parse", new JsonArray());
         body.add("allowed_mentions", allowedMentions);
         HttpRequest request = HttpRequest.newBuilder(URI.create(webhook))
-                .timeout(Duration.ofSeconds(15))
+                .timeout(Duration.ofSeconds(requestTimeoutSeconds))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build();
@@ -78,7 +86,7 @@ public class DiscordWebhook {
                     return true;
                 })
                 .exceptionally(error -> {
-                    logger.warning(other.raw("discord-send-error", Map.of("error", "запрос не выполнен")));
+                    logger.warning(other.raw("discord-send-error", Map.of("error", other.raw("request-failed"))));
                     return false;
                 });
     }

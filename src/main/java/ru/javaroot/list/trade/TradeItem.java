@@ -13,7 +13,7 @@ class TradeItem {
 
     static boolean canFit(Inventory inventory, ItemStack item) {
         int remaining = item.getAmount();
-        for (ItemStack current : inventory.getContents()) {
+        for (ItemStack current : inventory.getStorageContents()) {
             if (isEmpty(current)) {
                 remaining -= item.getMaxStackSize();
             } else if (current.isSimilar(item)) {

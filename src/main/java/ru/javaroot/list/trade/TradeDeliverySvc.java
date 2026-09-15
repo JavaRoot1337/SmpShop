@@ -42,10 +42,10 @@ class TradeDeliverySvc {
                     || !hasMarker(player.getInventory(), deliveryMarker)) {
                 return;
             }
-            if (deliveryMarker.startsWith("transaction:")) {
-                confirmDelivery(player, deliveryMarker.substring("transaction:".length()));
-            } else if (deliveryMarker.startsWith("recovery:")) {
-                confirmRecovery(player, Long.parseLong(deliveryMarker.substring("recovery:".length())));
+            if (deliveryMarker.startsWith(TradeMarkers.TRANSACTION_PREFIX)) {
+                confirmDelivery(player, deliveryMarker.substring(TradeMarkers.TRANSACTION_PREFIX.length()));
+            } else if (deliveryMarker.startsWith(TradeMarkers.RECOVERY_PREFIX)) {
+                confirmRecovery(player, Long.parseLong(deliveryMarker.substring(TradeMarkers.RECOVERY_PREFIX.length())));
             }
         });
     }
@@ -74,10 +74,10 @@ class TradeDeliverySvc {
     void deliverPending(Player player) {
         shopStore.pendingDeliveries(player.getUniqueId()).thenAccept(pending -> sched.entity(player, () -> {
             Set<String> active = pending.stream().map(ShopStore.PendingDelivery::transactionId)
-                    .map(id -> "transaction:" + id).collect(java.util.stream.Collectors.toSet());
-            clearStaleMarkers(player.getInventory(), "transaction:", active);
+                    .map(TradeMarkers::transaction).collect(java.util.stream.Collectors.toSet());
+            clearStaleMarkers(player.getInventory(), TradeMarkers.TRANSACTION_PREFIX, active);
             for (ShopStore.PendingDelivery delivery : pending) {
-                String marker = "transaction:" + delivery.transactionId();
+                String marker = TradeMarkers.transaction(delivery.transactionId());
                 if (hasMarker(player.getInventory(), marker)) {
                     confirmDelivery(player, delivery.transactionId());
                     continue;
@@ -88,6 +88,8 @@ class TradeDeliverySvc {
                 }
                 if (player.getInventory().addItem(product).isEmpty()) {
                     confirmDelivery(player, delivery.transactionId());
+                } else {
+                    removeMarker(player.getInventory(), marker);
                 }
             }
         }));
@@ -96,10 +98,10 @@ class TradeDeliverySvc {
     void deliverRecovery(Player player) {
         shopStore.recoveryItems(player.getUniqueId()).thenAccept(items -> sched.entity(player, () -> {
             Set<String> active = items.stream().map(ShopStore.RecoveryItem::id)
-                    .map(id -> "recovery:" + id).collect(java.util.stream.Collectors.toSet());
-            clearStaleMarkers(player.getInventory(), "recovery:", active);
+                    .map(TradeMarkers::recovery).collect(java.util.stream.Collectors.toSet());
+            clearStaleMarkers(player.getInventory(), TradeMarkers.RECOVERY_PREFIX, active);
             for (ShopStore.RecoveryItem recovery : items) {
-                String marker = "recovery:" + recovery.id();
+                String marker = TradeMarkers.recovery(recovery.id());
                 if (hasMarker(player.getInventory(), marker)) {
                     confirmRecovery(player, recovery.id());
                     continue;
@@ -110,6 +112,8 @@ class TradeDeliverySvc {
                 }
                 if (player.getInventory().addItem(item).isEmpty()) {
                     confirmRecovery(player, recovery.id());
+                } else {
+                    removeMarker(player.getInventory(), marker);
                 }
             }
         }));
@@ -168,9 +172,9 @@ class TradeDeliverySvc {
     }
 
     void removeTemporaryMarkers(Player player) {
-        removeMarkers(player.getInventory(), "pending:");
+        removeMarkers(player.getInventory(), TradeMarkers.PENDING_PREFIX);
         String cursorMarker = marker(player.getItemOnCursor());
-        if (cursorMarker != null && cursorMarker.startsWith("pending:")) {
+        if (cursorMarker != null && cursorMarker.startsWith(TradeMarkers.PENDING_PREFIX)) {
             player.getOpenInventory().setCursor(null);
         }
     }
@@ -233,7 +237,7 @@ class TradeDeliverySvc {
                 return;
             }
             if (applied) {
-                cleanupTransactionMarker(transaction.buyerId(), "transaction:" + transaction.transactionId());
+                cleanupTransactionMarker(transaction.buyerId(), TradeMarkers.transaction(transaction.transactionId()));
                 sched.global(() -> Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
                         UUID.fromString(transaction.transactionId()), transaction.shopId(), transaction.buyerId())));
             }
@@ -278,7 +282,7 @@ class TradeDeliverySvc {
 
     boolean isPendingSource(ItemStack item, ItemStack expected) {
         String value = marker(item);
-        return expected != null && (!isDeliveryItem(item) || (value != null && value.startsWith("pending:")))
+        return expected != null && (!isDeliveryItem(item) || (value != null && value.startsWith(TradeMarkers.PENDING_PREFIX)))
                 && !TradeItem.isEmpty(item) && pendingSimilar(item, expected, value)
                 && item.getAmount() == expected.getAmount();
     }
@@ -293,7 +297,7 @@ class TradeDeliverySvc {
     }
 
     void confirmDelivery(Player player, String transactionId) {
-        String marker = "transaction:" + transactionId;
+        String marker = TradeMarkers.transaction(transactionId);
         shopStore.delivered(transactionId, player.getUniqueId())
                 .thenAccept(delivered -> {
                     if (delivered) {
@@ -304,7 +308,7 @@ class TradeDeliverySvc {
     }
 
     void confirmDelivery(Player player, String transactionId, Runnable completed) {
-        String marker = "transaction:" + transactionId;
+        String marker = TradeMarkers.transaction(transactionId);
         shopStore.delivered(transactionId, player.getUniqueId()).thenAccept(delivered -> {
             if (!delivered) {
                 return;
@@ -319,7 +323,7 @@ class TradeDeliverySvc {
     }
 
     private void confirmRecovery(Player player, long recoveryId) {
-        String marker = "recovery:" + recoveryId;
+        String marker = TradeMarkers.recovery(recoveryId);
         shopStore.recoveryDelivered(recoveryId, player.getUniqueId()).thenAccept(delivered -> {
             if (delivered) {
                 sched.entity(player, () -> clearMarker(player.getInventory(), marker), () -> { });

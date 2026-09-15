@@ -35,7 +35,7 @@ public class BalanceStore {
         return db.submit(connection -> {
             MutationStatus status = update(connection, playerId, currency, amount);
             if (status != MutationStatus.SUCCESS) {
-                throw new SQLException("Переполнение баланса");
+                throw new SQLException(db.message("balance.overflow"));
             }
             return null;
         });
@@ -44,7 +44,7 @@ public class BalanceStore {
     public CompletableFuture<MutationResult> change(UUID operationId, String source, UUID playerId,
                                                      Currency currency, long amount) {
         String requestHash = "change:" + playerId + ':' + currency + ':' + amount;
-        return db.submit(connection -> transaction(connection, () -> {
+        return db.submit(connection -> db.transaction(connection, () -> {
             LedgerEntry prior = ledger(connection, operationId, source);
             if (prior != null) {
                 return replay(connection, prior, requestHash);
@@ -61,7 +61,7 @@ public class BalanceStore {
     public CompletableFuture<MutationResult> transfer(UUID operationId, String source, UUID fromPlayerId,
                                                        UUID toPlayerId, Currency currency, long amount) {
         String requestHash = "transfer:" + fromPlayerId + ':' + toPlayerId + ':' + currency + ':' + amount;
-        return db.submit(connection -> transaction(connection, () -> {
+        return db.submit(connection -> db.transaction(connection, () -> {
             LedgerEntry prior = ledger(connection, operationId, source);
             if (prior != null) {
                 return replay(connection, prior, requestHash);
@@ -77,7 +77,7 @@ public class BalanceStore {
                                                      long diamondDelta, long deepslateDelta) {
         String source = "smpshop:balance_gui";
         String requestHash = "settle:" + playerId + ':' + diamondDelta + ':' + deepslateDelta;
-        return db.submit(connection -> transaction(connection, () -> {
+        return db.submit(connection -> db.transaction(connection, () -> {
             LedgerEntry prior = ledger(connection, operationId, source);
             if (prior != null) {
                 return replay(connection, prior, requestHash);
@@ -160,7 +160,7 @@ public class BalanceStore {
             statement.setLong(2, System.currentTimeMillis());
             statement.setString(3, playerId.toString());
             if (statement.executeUpdate() != 1) {
-                throw new SQLException("Запись баланса исчезла во время операции");
+                throw new SQLException(db.message("balance.row-disappeared"));
             }
         }
     }
@@ -240,25 +240,6 @@ public class BalanceStore {
         }
     }
 
-    private <T> T transaction(Connection connection, SqlAction<T> action) throws SQLException {
-        boolean autoCommit = connection.getAutoCommit();
-        connection.setAutoCommit(false);
-        try {
-            T result = action.run();
-            connection.commit();
-            return result;
-        } catch (SQLException | RuntimeException exception) {
-            try {
-                connection.rollback();
-            } catch (SQLException rollbackError) {
-                exception.addSuppressed(rollbackError);
-            }
-            throw exception;
-        } finally {
-            connection.setAutoCommit(autoCommit);
-        }
-    }
-
     private String column(Currency currency) {
         return currency == Currency.DIAMOND_ORE ? "diamond_ore" : "deepslate_diamond_ore";
     }
@@ -276,8 +257,4 @@ public class BalanceStore {
     private record LedgerEntry(String requestHash, MutationStatus status, UUID playerId, UUID targetId) {
     }
 
-    @FunctionalInterface
-    private interface SqlAction<T> {
-        T run() throws SQLException;
-    }
 }

@@ -1,3 +1,4 @@
+# Поддержка? - @javaroot
 #для замены цвета используйте поиск и замену: &b на нужный цвет, включая &#FFFFFF
 loading: '&7Плагин ещё загружает базу данных'
 no-player: '&cКоманда доступна только игроку'
@@ -11,7 +12,7 @@ help: |
   &b/smpshop list [игрок] &8- &7показать магазины
   &b/smpshop link tg &8- &7получить ссылку привязки Телеграма
   &b/smpshop link ds webhook <url> &8- &7сохранить вебхук Дискорда
-  &b/smpshop link max &8- &7подвязать бота Макс
+  &b/smpshop link max &8- &7проверить интеграцию MAX
   &b/smpshop reload &8- &7перезагрузить настройки
 price-invalid: '&cЦена должна быть целым числом'
 price-range: '&cЦена должна быть от &b%min% &cдо &b%max%'
@@ -26,7 +27,7 @@ shop-deleted: '&7Магазин удалён. Содержимое сундук�
 shop-not-owner: '&cЭто не ваш магазин'
 reload: '&7Настройки и сообщения перезагружены'
 reload-failed: '&cНе удалось перезагрузить настройки. Проверьте конфигурацию.'
-link-max: '&cКакой нахуй макс! В дискордике с мужиками сиди.'
+link-max: '&7Интеграция MAX пока недоступна'
 link-code-prefix: '&7Ваш код для Телеграма: &b'
 link-code-suffix: ' &7(клик)'
 integration-disabled: '&cЭта интеграция отключена или не настроена'
@@ -35,6 +36,7 @@ discord-webhook-invalid: '&cУкажите правильный вебхук Д�
 telegram-referral-not-configured: '&cСсылка на Телеграм не настроена: укажите integrations.telegram.user-bot'
 telegram-referral-prefix: '&7Откройте ссылку для привязки Телеграма: &b'
 telegram-referral-suffix: ' &7(нажмите на ссылку)'
+telegram-referral-url-template: 'https://t.me/%bot%?start=%code%'
 balance-title: '&8Баланс руды'
 balance-previous: '&fНазад'
 balance-next: '&fВперед'

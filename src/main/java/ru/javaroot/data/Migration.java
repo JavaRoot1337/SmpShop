@@ -1,5 +1,7 @@
 package ru.javaroot.data;
 
+import ru.javaroot.config.DbLoc;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -7,8 +9,17 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.nio.file.Path;
 
-public class Migration {
+class Migration {
     private static final int LATEST_VERSION = 11;
+    private final DbLoc messages;
+
+    Migration() {
+        this(null);
+    }
+
+    Migration(DbLoc messages) {
+        this.messages = messages;
+    }
 
     public void apply(Connection connection, Path databaseFile) throws SQLException {
         try (Statement statement = connection.createStatement()) {
@@ -16,7 +27,7 @@ public class Migration {
         }
         int current = currentVersion(connection);
         if (current > LATEST_VERSION) {
-            throw new SQLException("Версия схемы базы данных новее версии плагина: " + current);
+            throw new SQLException(message("migration.schema-too-new", java.util.Map.of("version", current)));
         }
         if (current > 0 && current < LATEST_VERSION) {
             backup(connection, databaseFile);
@@ -90,7 +101,7 @@ public class Migration {
                     statement.executeUpdate("UPDATE transactions SET state = 'DELIVERED', delivered_at = COALESCE(completed_at, created_at) WHERE state = 'COMPLETED' AND item_snapshot IS NULL");
                     statement.executeUpdate("UPDATE transactions SET state = 'ROLLED_BACK', rolled_back_at = created_at WHERE state = 'PREPARED' AND (transaction_key IS NULL OR item_snapshot IS NULL)");
                 }
-                default -> throw new SQLException("Неизвестная миграция: " + version);
+                default -> throw new SQLException(message("migration.unknown", java.util.Map.of("version", version)));
             }
         }
     }
@@ -101,5 +112,9 @@ public class Migration {
         try (Statement statement = connection.createStatement()) {
             statement.execute("VACUUM main INTO '" + target + "'");
         }
+    }
+
+    private String message(String key, java.util.Map<String, ?> values) {
+        return messages == null ? key : messages.raw(key, values);
     }
 }

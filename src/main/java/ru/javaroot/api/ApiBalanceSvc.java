@@ -3,6 +3,7 @@ package ru.javaroot.api;
 import org.bukkit.Bukkit;
 import ru.javaroot.api.event.BalanceChangedEvent;
 import ru.javaroot.currency.Currency;
+import ru.javaroot.config.OtherMsg;
 import ru.javaroot.data.BalanceStore;
 import ru.javaroot.gui.BalanceInv;
 import ru.javaroot.scheduler.Sched;
@@ -19,19 +20,21 @@ class ApiBalanceSvc {
     private final ApiSnapshotMapper mapper;
     private final Sched sched;
     private final Supplier<ApiStatus> unavailable;
+    private final OtherMsg other;
 
     ApiBalanceSvc(BalanceStore balances, BalanceInv balanceGui, ApiSnapshotMapper mapper, Sched sched,
-                  Supplier<ApiStatus> unavailable) {
+                  Supplier<ApiStatus> unavailable, OtherMsg other) {
         this.balances = balances;
         this.balanceGui = balanceGui;
         this.mapper = mapper;
         this.sched = sched;
         this.unavailable = unavailable;
+        this.other = other;
     }
 
     CompletionStage<BalanceSnapshot> balance(UUID playerId) {
         if (unavailable.get() != null) {
-            return CompletableFuture.failedFuture(new IllegalStateException("API SmpShop ещё не готов к работе"));
+            return CompletableFuture.failedFuture(new IllegalStateException(other.raw("api-not-ready")));
         }
         return balances.load(playerId).thenApply(balance -> mapper.balance(playerId, balance));
     }
@@ -96,7 +99,7 @@ class ApiBalanceSvc {
             events.forEach(Bukkit.getPluginManager()::callEvent);
             scheduled.complete(result);
         }) != Sched.ScheduleResult.SCHEDULED) {
-            scheduled.completeExceptionally(new IllegalStateException("API SmpShop завершает работу"));
+            scheduled.completeExceptionally(new IllegalStateException(other.raw("api-shutting-down")));
         }
         return scheduled;
     }

@@ -1,5 +1,7 @@
 package ru.javaroot.shop;
 
+import ru.javaroot.config.OtherMsg;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -11,12 +13,21 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class ShopMgr {
+    private final OtherMsg other;
     private final ConcurrentMap<Long, Shop> byId = new ConcurrentHashMap<>();
     private final ConcurrentMap<ShopKey, Long> byBlock = new ConcurrentHashMap<>();
     private final Set<ShopKey> reserved = ConcurrentHashMap.newKeySet();
     private final Map<ShopKey, UUID> reservationOwners = new HashMap<>();
     private final Map<UUID, Integer> pendingByOwner = new HashMap<>();
     private final Object indexLock = new Object();
+
+    public ShopMgr() {
+        this(null);
+    }
+
+    public ShopMgr(OtherMsg other) {
+        this.other = other;
+    }
 
     public void load(Collection<Shop> shops) {
         synchronized (indexLock) {
@@ -41,10 +52,12 @@ public class ShopMgr {
 
     private void addLocked(Shop shop) {
         if (byId.containsKey(shop.id()) || byBlock.containsKey(shop.firstKey())) {
-            throw new IllegalStateException("Повторная регистрация магазина: " + shop.id());
+            throw new IllegalStateException(other == null ? null : other.raw("shop-duplicate-id",
+                    Map.of("shop", shop.id())));
         }
         if (shop.secondKey() != null && byBlock.containsKey(shop.secondKey())) {
-            throw new IllegalStateException("Позиция магазина уже занята: " + shop.secondKey());
+            throw new IllegalStateException(other == null ? null : other.raw("shop-duplicate-position",
+                    Map.of("position", shop.secondKey())));
         }
         byId.put(shop.id(), shop);
         byBlock.put(shop.firstKey(), shop.id());
@@ -124,7 +137,7 @@ public class ShopMgr {
             }
             Shop updated = new Shop(shop.id(), shop.ownerId(), shop.ownerName(), shop.worldId(),
                     shop.x1(), shop.y1(), shop.z1(), shop.x2(), shop.y2(), shop.z2(), price,
-                    shop.earnedTotal(), shop.soldSlots(), shop.soldItems(), shop.createdAt(), shop.active());
+                    shop.earnedTotal(), shop.soldSlots(), shop.soldItems(), shop.createdAt());
             byId.put(shopId, updated);
             return updated;
         }
@@ -136,7 +149,7 @@ public class ShopMgr {
                     shop.id(), shop.ownerId(), shop.ownerName(), shop.worldId(),
                     shop.x1(), shop.y1(), shop.z1(), shop.x2(), shop.y2(), shop.z2(),
                     shop.price(), Math.addExact(shop.earnedTotal(), amount), Math.addExact(shop.soldSlots(), 1),
-                    Math.addExact(shop.soldItems(), items), shop.createdAt(), shop.active()));
+                    Math.addExact(shop.soldItems(), items), shop.createdAt()));
         }
     }
 

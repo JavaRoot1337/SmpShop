@@ -5,7 +5,7 @@ import java.util.UUID;
 public record Shop(long id, UUID ownerId, String ownerName, UUID worldId,
                    int x1, int y1, int z1, Integer x2, Integer y2, Integer z2,
                    int price, long earnedTotal, long soldSlots, long soldItems,
-                   long createdAt, boolean active) {
+                   long createdAt) {
     public Shop {
         if (id < 0 || price < 1 || ownerId == null || worldId == null) {
             throw new IllegalArgumentException("Некорректные данные магазина");

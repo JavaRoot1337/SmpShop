@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import ru.javaroot.SmpShop;
 import ru.javaroot.config.Cfg;
+import ru.javaroot.config.OtherMsg;
 import ru.javaroot.data.BalanceStore;
 import ru.javaroot.data.ShopStore;
 import ru.javaroot.gui.BalanceInv;
@@ -33,12 +34,18 @@ public class SmpShopApiImpl implements SmpShopApi {
 
     public SmpShopApiImpl(SmpShop plugin, ShopMgr shops, ShopStore shopStore, BalanceStore balances,
                           BalanceInv balanceGui, ShopListInv listGui, ShopTrade trade, Sched sched, Cfg cfg) {
+        this(plugin, shops, shopStore, balances, balanceGui, listGui, trade, sched, cfg, new OtherMsg(plugin));
+    }
+
+    public SmpShopApiImpl(SmpShop plugin, ShopMgr shops, ShopStore shopStore, BalanceStore balances,
+                          BalanceInv balanceGui, ShopListInv listGui, ShopTrade trade, Sched sched, Cfg cfg,
+                          OtherMsg other) {
         this.shops = shops;
         this.balanceGui = balanceGui;
         this.listGui = listGui;
         this.sched = sched;
         mapper = new ApiSnapshotMapper();
-        balanceService = new ApiBalanceSvc(balances, balanceGui, mapper, sched, this::unavailableStatus);
+        balanceService = new ApiBalanceSvc(balances, balanceGui, mapper, sched, this::unavailableStatus, other);
         shopService = new ApiShopSvc(shops, shopStore, trade, sched, cfg, mapper, this::unavailableStatus);
     }
 

@@ -18,6 +18,8 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import ru.javaroot.config.Msg;
+import ru.javaroot.config.OtherMsg;
+import ru.javaroot.logersxd.Loggers;
 import ru.javaroot.data.BalanceStore;
 import ru.javaroot.data.ShopStore;
 import ru.javaroot.integration.IntegrationHub;
@@ -38,8 +40,22 @@ public class ShopTrade implements Listener {
     public ShopTrade(JavaPlugin plugin, ShopMgr shops, ShopStore shopStore, BalanceStore balances,
                      IntegrationHub integrations, NotifySvc notifications, SoundSvc sounds, Msg msg,
                      ItemName itemNames, Sched sched, Logger logger) {
+        this(plugin, shops, shopStore, balances, integrations, notifications, sounds, msg,
+                itemNames, sched, new Loggers(logger), new OtherMsg(plugin));
+    }
+
+    public ShopTrade(JavaPlugin plugin, ShopMgr shops, ShopStore shopStore, BalanceStore balances,
+                     IntegrationHub integrations, NotifySvc notifications, SoundSvc sounds, Msg msg,
+                     ItemName itemNames, Sched sched, Logger logger, OtherMsg other) {
+        this(plugin, shops, shopStore, balances, integrations, notifications, sounds, msg,
+                itemNames, sched, new Loggers(logger), other);
+    }
+
+    public ShopTrade(JavaPlugin plugin, ShopMgr shops, ShopStore shopStore, BalanceStore balances,
+                     IntegrationHub integrations, NotifySvc notifications, SoundSvc sounds, Msg msg,
+                     ItemName itemNames, Sched sched, Loggers logs, OtherMsg other) {
         events = new TradeEventHdl(plugin, shops, shopStore, balances, integrations, notifications, sounds,
-                msg, itemNames, sched, logger);
+                msg, other, itemNames, sched, logs.trade());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

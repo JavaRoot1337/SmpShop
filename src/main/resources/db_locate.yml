@@ -1,0 +1,81 @@
+# Поддержка? - @javaroot
+loader:
+  missing-key: 'Не найден диагностический ключ db_locate.yml: %key%'
+  load-failed: 'Не удалось загрузить файл диагностики: %resource%'
+  save-failed: 'Не удалось сохранить файл диагностики: %resource%'
+
+items:
+  DIAMOND_SWORD: 'Алмазный меч'
+  DIAMOND_PICKAXE: 'Алмазная кирка'
+  DIAMOND_AXE: 'Алмазный топор'
+  DIAMOND_SHOVEL: 'Алмазная лопата'
+  DIAMOND_HOE: 'Алмазная мотыга'
+  NETHERITE_SWORD: 'Незеритовый меч'
+  NETHERITE_PICKAXE: 'Незеритовая кирка'
+  NETHERITE_AXE: 'Незеритовый топор'
+  NETHERITE_SHOVEL: 'Незеритовая лопата'
+  NETHERITE_HOE: 'Незеритовая мотыга'
+  DIAMOND_HELMET: 'Алмазный шлем'
+  DIAMOND_CHESTPLATE: 'Алмазный нагрудник'
+  DIAMOND_LEGGINGS: 'Алмазные поножи'
+  DIAMOND_BOOTS: 'Алмазные ботинки'
+  NETHERITE_HELMET: 'Незеритовый шлем'
+  NETHERITE_CHESTPLATE: 'Незеритовый нагрудник'
+  NETHERITE_LEGGINGS: 'Незеритовые поножи'
+  NETHERITE_BOOTS: 'Незеритовые ботинки'
+  MACE: 'Булава'
+  TOTEM_OF_UNDYING: 'Тотем бессмертия'
+  SHIELD: 'Щит'
+  BOW: 'Лук'
+  CROSSBOW: 'Арбалет'
+  TRIDENT: 'Трезубец'
+  ELYTRA: 'Элитры'
+  GOLDEN_APPLE: 'Золотое яблоко'
+  ENCHANTED_GOLDEN_APPLE: 'Зачарованное золотое яблоко'
+
+sqlite:
+  already-started: 'SQLite уже запущен'
+  data-folder-create-failed: 'Не удалось создать папку данных плагина'
+  initialization-failed: 'Не удалось инициализировать SQLite'
+  not-ready: 'SQLite не готов к работе'
+  operation-failed: 'Не удалось выполнить операцию SQLite'
+  closing: 'SQLite закрывается'
+  close-failed: 'Не удалось закрыть SQLite'
+  driver-deregister-failed: 'Не удалось отключить драйвер SQLite'
+
+balance:
+  overflow: 'Переполнение баланса'
+  row-disappeared: 'Запись баланса исчезла во время операции'
+
+link:
+  unique-code-failed: 'Не удалось создать уникальный код привязки'
+  hash-algorithm-unavailable: 'Алгоритм SHA-256 недоступен'
+
+migration:
+  schema-too-new: 'Версия схемы базы данных новее версии плагина: %version%'
+  unknown: 'Неизвестная миграция: %version%'
+
+shop:
+  id-not-returned: 'SQLite не вернул идентификатор магазина'
+  inactive-or-statistics-overflow: 'Магазин больше не активен или статистика переполнена'
+  cleanup-failed: 'Не удалось очистить магазин: %error%'
+  registration-failed: 'Не удалось зарегистрировать магазин: %error%'
+  save-failed: 'Не удалось сохранить магазин: %error%'
+  delete-failed: 'Не удалось удалить магазин: %error%'
+  coordinate-used: 'Позиция сундука уже занята магазином'
+
+transaction:
+  id-used: 'Идентификатор транзакции уже использован'
+  invalid-data: 'Некорректные данные транзакции'
+  completion-invalid: 'Некорректные данные завершения транзакции'
+
+recovery:
+  data-missing: 'Отсутствуют данные для восстановления предмета'
+
+notification:
+  delivery-failed: 'Не удалось отметить уведомление о продаже доставленным'
+  load-failed: 'Не удалось загрузить уведомления о продажах'
+  save-failed: 'Не удалось сохранить уведомление о продаже'
+  amount-overflow: 'Сумма уведомлений переполнена'
+  participants-invalid: 'Не заданы участники уведомления'
+  batch-too-large: 'Слишком большая пачка уведомлений'

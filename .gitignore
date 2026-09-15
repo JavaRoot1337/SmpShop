@@ -1,0 +1,14 @@
+*
+!src/
+!src/**
+src/test/
+!README.md
+!api.md
+!READMEru.md
+!apiru.md
+
+!build.gradle.kts
+!settings.gradle.kts
+!gradlew
+!gradlew.bat
+!.gitignore

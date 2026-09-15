@@ -13,6 +13,7 @@ class TradeSessionStore {
     private final Map<UUID, EnumMap<Currency, Long>> pendingReturns = new ConcurrentHashMap<>();
     private final Set<Long> lockedShops = ConcurrentHashMap.newKeySet();
     private final Set<Long> removalLocks = ConcurrentHashMap.newKeySet();
+    private final Object shopLock = new Object();
     private volatile boolean accepting;
 
     TradeSession get(UUID playerId) {
@@ -35,8 +36,12 @@ class TradeSessionStore {
         return Set.copyOf(pendingReturns.keySet());
     }
 
-    EnumMap<Currency, Long> removePendingReturn(UUID playerId) {
-        return pendingReturns.remove(playerId);
+    EnumMap<Currency, Long> pendingReturn(UUID playerId) {
+        return pendingReturns.get(playerId);
+    }
+
+    boolean removePendingReturn(UUID playerId, EnumMap<Currency, Long> payment) {
+        return pendingReturns.remove(playerId, payment);
     }
 
     void mergePendingReturn(UUID playerId, EnumMap<Currency, Long> payment) {
@@ -47,23 +52,33 @@ class TradeSessionStore {
     }
 
     boolean isBusy(long shopId) {
-        return lockedShops.contains(shopId) || removalLocks.contains(shopId);
+        synchronized (shopLock) {
+            return lockedShops.contains(shopId) || removalLocks.contains(shopId);
+        }
     }
 
     boolean reserve(long shopId) {
-        return lockedShops.add(shopId);
+        synchronized (shopLock) {
+            return !removalLocks.contains(shopId) && lockedShops.add(shopId);
+        }
     }
 
     void release(long shopId) {
-        lockedShops.remove(shopId);
+        synchronized (shopLock) {
+            lockedShops.remove(shopId);
+        }
     }
 
     boolean reserveRemoval(long shopId) {
-        return removalLocks.add(shopId);
+        synchronized (shopLock) {
+            return !lockedShops.contains(shopId) && removalLocks.add(shopId);
+        }
     }
 
     void releaseRemoval(long shopId) {
-        removalLocks.remove(shopId);
+        synchronized (shopLock) {
+            removalLocks.remove(shopId);
+        }
     }
 
     boolean accepting() {

@@ -11,23 +11,26 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
+import ru.javaroot.config.OtherMsg;
 
 public class BoundedHttp {
     private final HttpClient client;
     private final Semaphore permits;
     private final int responseLimit;
+    private final OtherMsg other;
 
-    public BoundedHttp(int maxConcurrent, int connectTimeoutSeconds, int responseLimit) {
+    public BoundedHttp(int maxConcurrent, int connectTimeoutSeconds, int responseLimit, OtherMsg other) {
         this.client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
                 .build();
         this.permits = new Semaphore(maxConcurrent);
         this.responseLimit = responseLimit;
+        this.other = other;
     }
 
     public CompletableFuture<Response> send(HttpRequest request) {
         if (!permits.tryAcquire()) {
-            return CompletableFuture.failedFuture(new RejectedExecutionException("Достигнут лимит HTTP-запросов"));
+            return CompletableFuture.failedFuture(new RejectedExecutionException(other.raw("http-request-limit")));
         }
         try {
             return client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream())
@@ -44,7 +47,7 @@ public class BoundedHttp {
                             }
                             if (body.length > responseLimit) {
                                 throw new CompletionException(
-                                        new IllegalStateException("Ответ HTTP превышает допустимый размер"));
+                                        new IllegalStateException(other.raw("http-response-too-large")));
                             }
                             return new Response(response.statusCode(),
                                     new String(body, StandardCharsets.UTF_8));

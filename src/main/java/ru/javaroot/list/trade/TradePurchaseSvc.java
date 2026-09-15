@@ -23,6 +23,8 @@ import ru.javaroot.sound.SoundSvc;
 import ru.javaroot.shop.Shop;
 import ru.javaroot.shop.ShopMgr;
 import ru.javaroot.config.Msg;
+import ru.javaroot.config.OtherMsg;
+import ru.javaroot.logersxd.Loggers;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -39,17 +41,26 @@ class TradePurchaseSvc {
     private final NotifySvc notifications;
     private final SoundSvc sounds;
     private final Msg msg;
+    private final OtherMsg other;
     private final ItemName itemNames;
     private final Sched sched;
-    private final Logger logger;
+    private final Loggers.Channel logger;
     private final TradeSessionStore sessions;
     private final TradePaymentSvc payment;
     private final TradeDeliverySvc delivery;
     private final Gson gson = new Gson();
 
     TradePurchaseSvc(ShopMgr shops, ShopStore shopStore, IntegrationHub integrations,
-                                NotifySvc notifications, SoundSvc sounds, Msg msg, ItemName itemNames,
+                                NotifySvc notifications, SoundSvc sounds, Msg msg, OtherMsg other, ItemName itemNames,
                                 Sched sched, Logger logger, TradeSessionStore sessions,
+                                TradePaymentSvc payment, TradeDeliverySvc delivery) {
+        this(shops, shopStore, integrations, notifications, sounds, msg, other, itemNames, sched,
+                new Loggers(logger).trade(), sessions, payment, delivery);
+    }
+
+    TradePurchaseSvc(ShopMgr shops, ShopStore shopStore, IntegrationHub integrations,
+                                NotifySvc notifications, SoundSvc sounds, Msg msg, OtherMsg other, ItemName itemNames,
+                                Sched sched, Loggers.Channel logger, TradeSessionStore sessions,
                                 TradePaymentSvc payment, TradeDeliverySvc delivery) {
         this.shops = shops;
         this.shopStore = shopStore;
@@ -57,6 +68,7 @@ class TradePurchaseSvc {
         this.notifications = notifications;
         this.sounds = sounds;
         this.msg = msg;
+        this.other = other;
         this.itemNames = itemNames;
         this.sched = sched;
         this.logger = logger;
@@ -95,7 +107,7 @@ class TradePurchaseSvc {
         session.destinationSlot = event.getRawSlot() - session.inventory.getSize();
         event.setCancelled(false);
         sched.entity(player, () -> completeManualPlacement(player, session),
-                () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId, Map.of()));
+                () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId));
     }
 
     void handlePendingDrag(InventoryDragEvent event, Player player, TradeSession session) {
@@ -109,7 +121,7 @@ class TradePurchaseSvc {
                                 session.pendingProduct)) {
                     returnPendingProduct(player, session);
                 }
-            }, () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId, Map.of()));
+            }, () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId));
             return;
         }
         if (!session.prepared || !isPendingPlacement(event, session)) {
@@ -118,7 +130,7 @@ class TradePurchaseSvc {
         session.destinationSlot = event.getRawSlots().iterator().next() - session.inventory.getSize();
         event.setCancelled(false);
         sched.entity(player, () -> completeManualPlacement(player, session),
-                () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId, Map.of()));
+                () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId));
     }
 
     void preparePurchase(Player player, TradeSession session, Shop shop, int slot, ItemStack product) {
@@ -146,7 +158,7 @@ class TradePurchaseSvc {
         session.destinationSlot = -1;
         session.escrowed = false;
         session.inventory.setItem(slot, null);
-        player.getOpenInventory().setCursor(delivery.deliveryItem(product, "pending:" + transactionId));
+        player.getOpenInventory().setCursor(delivery.deliveryItem(product, TradeMarkers.pending(transactionId)));
         shopStore.prepareSale(transactionId.toString(), shop, player.getUniqueId(), slot,
                         product.getAmount(), shop.price(), adjusted.buyer(), adjusted.seller(),
                         product.serializeAsBytes(), gson.toJson(event.adjustments()))
@@ -156,12 +168,12 @@ class TradePurchaseSvc {
                         session.prepared = true;
                         return;
                     }
-                    cancelPrepared(player, session, transactionId, Map.of());
-                }, () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId, Map.of())))
+                    cancelPrepared(player, session, transactionId);
+                }, () -> cancelPreparedRetired(player.getUniqueId(), session, transactionId)))
                 .exceptionally(error -> {
                     sched.entity(player, () -> failPreparation(player, session),
                             () -> finishPending(player.getUniqueId(), session));
-                    logger.log(Level.SEVERE, "Не удалось подготовить продажу #" + shop.id(), error);
+                    logger.log(Level.SEVERE, other.raw("trade-preparation-failed", Map.of("shop", shop.id())), error);
                     return null;
                 });
     }
@@ -174,11 +186,11 @@ class TradePurchaseSvc {
         }
         ItemStack placed = player.getInventory().getItem(session.destinationSlot);
         if (!delivery.isPendingSource(placed, session.pendingProduct)) {
-            cancelPrepared(player, session, session.transactionId, Map.of());
+            cancelPrepared(player, session, session.transactionId);
             return;
         }
         player.getInventory().setItem(session.destinationSlot,
-                delivery.deliveryItem(session.pendingProduct, "transaction:" + session.transactionId));
+                delivery.deliveryItem(session.pendingProduct, TradeMarkers.transaction(session.transactionId.toString())));
         session.productPlaced = true;
         escrowAndComplete(player, session, session.shop, session.pendingSlot, session.pendingProduct,
                 session.transactionId, session.payment, session.adjustments);
@@ -188,27 +200,27 @@ class TradePurchaseSvc {
         if (sessions.get(player.getUniqueId()) != session || !session.purchasePending) {
             return;
         }
-        cancelPrepared(player, session, session.transactionId, Map.of());
+        cancelPrepared(player, session, session.transactionId);
     }
 
     void escrowAndComplete(Player player, TradeSession session, Shop shop, int slot,
                                   ItemStack product, UUID transactionId, TradePaymentSvc.Payment pay,
                                   List<PurchaseAdjustment> adjustments) {
         if (sessions.get(player.getUniqueId()) != session || !session.purchasePending) {
-            cancelPrepared(player, session, transactionId, Map.of());
+            cancelPrepared(player, session, transactionId);
             return;
         }
-        if (!session.productPlaced || !delivery.hasMarker(player.getInventory(), "transaction:" + transactionId)
+        if (!session.productPlaced || !delivery.hasMarker(player.getInventory(), TradeMarkers.transaction(transactionId.toString()))
                 || !payment.hasPayment(session, pay.buyer())) {
-            cancelPrepared(player, session, transactionId, Map.of());
+            cancelPrepared(player, session, transactionId);
             return;
         }
         payment.takePayment(session, pay.buyer());
         session.escrowed = true;
         if (sched.region(session.location, () -> takePhysicalAndComplete(player, session, shop, slot,
                 product, transactionId, pay, adjustments)) != Sched.ScheduleResult.SCHEDULED) {
-            restoreFailedPurchase(player, session, shop, product, transactionId, pay.buyer(), slot, false,
-                    new IllegalStateException("Регион магазина недоступен"));
+            restoreFailedPurchase(player, session, shop, product, transactionId, slot, false,
+                    new IllegalStateException(other.raw("trade-region-unavailable")));
         }
     }
 
@@ -217,8 +229,8 @@ class TradePurchaseSvc {
                                          List<PurchaseAdjustment> adjustments) {
         ItemStack physical = session.physical.getItem(slot);
         if (physical == null || !physical.isSimilar(product) || physical.getAmount() != product.getAmount()) {
-            restoreFailedPurchase(player, session, shop, product, transactionId, pay.buyer(), slot, true,
-                    new IllegalStateException("Товар в магазине изменился до подтверждения операции"));
+            restoreFailedPurchase(player, session, shop, product, transactionId, slot, true,
+                    new IllegalStateException(other.raw("trade-product-changed")));
             return;
         }
         session.physical.setItem(slot, null);
@@ -234,8 +246,8 @@ class TradePurchaseSvc {
         shopStore.completeSale(transactionId.toString(), shop, items, pay.seller())
                 .thenAccept(completed -> {
                     if (!completed) {
-                        restoreFailedPurchase(player, session, shop, product, transactionId, pay.buyer(), itemSlot,
-                                true, new IllegalStateException("Транзакция больше не подготовлена"));
+                        restoreFailedPurchase(player, session, shop, product, transactionId, itemSlot,
+                                true, new IllegalStateException(other.raw("trade-not-prepared")));
                         return;
                     }
                     CompletableFuture<Void> publication = new CompletableFuture<>();
@@ -253,16 +265,15 @@ class TradePurchaseSvc {
                         }
                     }) != Sched.ScheduleResult.SCHEDULED) {
                         publication.complete(null);
-                        logger.warning("Не удалось опубликовать завершение покупки #" + shop.id()
-                                + ": сервер завершает работу");
+                        logger.warning(other.raw("trade-publication-skipped", Map.of("shop", shop.id())));
                     }
                     publication.handle((ignored, error) -> {
                         if (error != null) {
-                            logger.log(Level.WARNING, "Не удалось опубликовать завершение покупки #" + shop.id(), error);
+                            logger.log(Level.WARNING, other.raw("trade-publication-failed", Map.of("shop", shop.id())), error);
                         }
                         sched.entity(player, () -> {
                             finishPending(player.getUniqueId(), session);
-                            if (delivery.hasMarker(player.getInventory(), "transaction:" + transactionId)) {
+                            if (delivery.hasMarker(player.getInventory(), TradeMarkers.transaction(transactionId.toString()))) {
                                 delivery.confirmDelivery(player, transactionId.toString(), () -> {
                                     sounds.buyerPurchase(player);
                                     msg.send(player, "purchase-success", Map.of("items", items, "amount", amount),
@@ -275,24 +286,23 @@ class TradePurchaseSvc {
                 })
                 .exceptionally(error -> {
                     restoreFailedPurchase(player, session, shop, product, transactionId,
-                            pay.buyer(), itemSlot, true, error);
+                            itemSlot, true, error);
                     return null;
                 });
     }
 
     void restoreFailedPurchase(Player player, TradeSession session, Shop shop, ItemStack product,
-                                      UUID transactionId, Map<Currency, Long> pay, int itemSlot,
+                                      UUID transactionId, int itemSlot,
                                       boolean productRemoved, Throwable error) {
-        logger.log(Level.SEVERE, "Не удалось завершить продажу #" + shop.id(), error);
+        logger.log(Level.SEVERE, other.raw("trade-completion-failed", Map.of("shop", shop.id())), error);
         sched.entity(player, () -> {
-            delivery.removeMarker(player.getInventory(), "transaction:" + transactionId);
             if (sessions.get(player.getUniqueId()) == session && session.inventory.getItem(itemSlot) == null) {
                 session.inventory.setItem(itemSlot, product.clone());
             }
             finishPending(player.getUniqueId(), session);
         }, () -> finishPending(player.getUniqueId(), session));
         if (!productRemoved) {
-            rollbackFailedPurchase(player, shop, product, transactionId, pay, false);
+            rollbackFailedPurchase(player, shop, transactionId, false);
             return;
         }
         Runnable restore = () -> {
@@ -302,33 +312,33 @@ class TradePurchaseSvc {
             if (current == null) {
                 session.physical.setItem(itemSlot, product.clone());
             }
-            rollbackFailedPurchase(player, shop, product, transactionId, pay, recoverItem);
+            rollbackFailedPurchase(player, shop, transactionId, recoverItem);
         };
         if (Bukkit.isOwnedByCurrentRegion(session.location)) {
             restore.run();
         } else if (sched.region(session.location, restore) != Sched.ScheduleResult.SCHEDULED) {
-            rollbackFailedPurchase(player, shop, product, transactionId, pay, true);
+            rollbackFailedPurchase(player, shop, transactionId, true);
         }
     }
 
-    void rollbackFailedPurchase(Player player, Shop shop, ItemStack product, UUID transactionId,
-                                        Map<Currency, Long> pay, boolean recoverItem) {
-        shopStore.rollback(transactionId.toString(), player.getUniqueId(), pay, shop.ownerId(),
-                        product.serializeAsBytes(), recoverItem)
+    void rollbackFailedPurchase(Player player, Shop shop, UUID transactionId, boolean recoverItem) {
+        shopStore.rollback(transactionId.toString(), player.getUniqueId(), recoverItem)
                 .thenAccept(applied -> {
                     if (applied) {
+                        sched.entity(player, () -> {
+                            delivery.removeMarker(player.getInventory(), TradeMarkers.transaction(transactionId.toString()));
+                            delivery.removeMarker(player.getInventory(), TradeMarkers.pending(transactionId));
+                        }, () -> { });
                         sched.global(() -> Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
                                 transactionId, shop.id(), player.getUniqueId())));
                     }
                 });
     }
 
-    void cancelPrepared(Player player, TradeSession session, UUID transactionId,
-                               Map<Currency, Long> refund) {
+    void cancelPrepared(Player player, TradeSession session, UUID transactionId) {
         boolean active = transactionId != null && sessions.get(player.getUniqueId()) == session
                 && session.purchasePending && transactionId.equals(session.transactionId);
         if (active) {
-            removePendingPlayerItem(player, session, transactionId);
             if (session.pendingProduct != null && TradeItem.isEmpty(session.inventory.getItem(session.pendingSlot))) {
                 session.inventory.setItem(session.pendingSlot, session.pendingProduct.clone());
             }
@@ -337,17 +347,20 @@ class TradePurchaseSvc {
         if (transactionId == null) {
             return;
         }
-        shopStore.rollback(transactionId.toString(), player.getUniqueId(), refund)
+        shopStore.rollback(transactionId.toString(), player.getUniqueId(), false)
                 .thenAccept(applied -> {
                     if (applied) {
+                        sched.entity(player, () -> {
+                            removePendingPlayerItem(player, session, transactionId);
+                            delivery.removeMarker(player.getInventory(), TradeMarkers.pending(transactionId));
+                        }, () -> { });
                         sched.global(() -> Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
                                 transactionId, session.shop.id(), player.getUniqueId())));
                     }
                 });
     }
 
-    private void cancelPreparedRetired(UUID playerId, TradeSession session, UUID transactionId,
-                                       Map<Currency, Long> refund) {
+    private void cancelPreparedRetired(UUID playerId, TradeSession session, UUID transactionId) {
         if (sessions.get(playerId) == session && session.purchasePending
                 && transactionId != null && transactionId.equals(session.transactionId)) {
             finishPending(playerId, session);
@@ -355,7 +368,7 @@ class TradePurchaseSvc {
         if (transactionId == null) {
             return;
         }
-        shopStore.rollback(transactionId.toString(), playerId, refund)
+        shopStore.rollback(transactionId.toString(), playerId, false)
                 .thenAccept(applied -> {
                     if (applied) {
                         sched.global(() -> Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
@@ -370,11 +383,11 @@ class TradePurchaseSvc {
         }
         session.inventory.setItem(session.pendingSlot, session.pendingProduct.clone());
         player.getOpenInventory().setCursor(null);
-        cancelPrepared(player, session, session.transactionId, Map.of());
+        cancelPrepared(player, session, session.transactionId);
     }
 
     void removePendingPlayerItem(Player player, TradeSession session, UUID transactionId) {
-        String txMarker = "transaction:" + transactionId;
+        String txMarker = TradeMarkers.transaction(transactionId.toString());
         if (txMarker.equals(delivery.marker(player.getItemOnCursor()))
                 || delivery.isPendingSource(player.getItemOnCursor(), session.pendingProduct)) {
             player.getOpenInventory().setCursor(null);

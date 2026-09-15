@@ -11,16 +11,20 @@ import ru.javaroot.scheduler.Sched;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
+import ru.javaroot.logersxd.Loggers;
 
 public class SoundSvc {
-    private final Logger logger;
+    private final Loggers.Channel logger;
     private final Cfg cfg;
     private final OtherMsg other;
     private final Sched sched;
     private final Set<String> invalidSounds = ConcurrentHashMap.newKeySet();
 
-    public SoundSvc(Logger logger, Cfg cfg, OtherMsg other, Sched sched) {
+    public SoundSvc(java.util.logging.Logger logger, Cfg cfg, OtherMsg other, Sched sched) {
+        this(new Loggers(logger).sound(), cfg, other, sched);
+    }
+
+    public SoundSvc(Loggers.Channel logger, Cfg cfg, OtherMsg other, Sched sched) {
         this.logger = logger;
         this.cfg = cfg;
         this.other = other;

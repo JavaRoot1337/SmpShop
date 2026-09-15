@@ -2,6 +2,7 @@ package ru.javaroot.data;
 
 import org.bukkit.plugin.Plugin;
 import org.sqlite.JDBC;
+import ru.javaroot.config.DbLoc;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -14,7 +15,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -22,6 +22,8 @@ public class Sqlite {
     private final Plugin plugin;
     private final String fileName;
     private final int timeoutSeconds;
+    private final int shutdownTimeoutSeconds;
+    private final DbLoc messages;
     private volatile Thread worker;
     private final ExecutorService queue = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "SMPSHOP-SQLite");
@@ -36,15 +38,25 @@ public class Sqlite {
     private volatile State state = State.NEW;
 
     public Sqlite(Plugin plugin, String fileName, int timeoutSeconds) {
+        this(plugin, fileName, timeoutSeconds, null);
+    }
+
+    public Sqlite(Plugin plugin, String fileName, int timeoutSeconds, DbLoc messages) {
+        this(plugin, fileName, timeoutSeconds, 10, messages);
+    }
+
+    public Sqlite(Plugin plugin, String fileName, int timeoutSeconds, int shutdownTimeoutSeconds, DbLoc messages) {
         this.plugin = plugin;
         this.fileName = fileName;
         this.timeoutSeconds = timeoutSeconds;
+        this.shutdownTimeoutSeconds = shutdownTimeoutSeconds;
+        this.messages = messages;
     }
 
     public CompletableFuture<Void> start() {
         synchronized (lifecycle) {
             if (state != State.NEW) {
-                return CompletableFuture.failedFuture(new IllegalStateException("SQLite уже запущен"));
+                return CompletableFuture.failedFuture(new IllegalStateException(message("sqlite.already-started")));
             }
             state = State.STARTING;
             startFuture = CompletableFuture.runAsync(this::initialize, queue);
@@ -57,7 +69,7 @@ public class Sqlite {
             File file = new File(plugin.getDataFolder(), fileName);
             File parent = file.getParentFile();
             if (!parent.exists() && !parent.mkdirs()) {
-                throw new SQLException("Не удалось создать папку данных плагина");
+                throw new SQLException(message("sqlite.data-folder-create-failed"));
             }
             driver = new JDBC();
             DriverManager.registerDriver(driver);
@@ -65,32 +77,44 @@ public class Sqlite {
             connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile);
             connection.setAutoCommit(true);
             configure(connection);
-            new Migration().apply(connection, databaseFile);
-            state = State.READY;
-        } catch (SQLException exception) {
+            new Migration(messages).apply(connection, databaseFile);
+            synchronized (lifecycle) {
+                if (state == State.CLOSING || state == State.CLOSED) {
+                    closeResources();
+                    return;
+                }
+                state = State.READY;
+            }
+        } catch (Throwable exception) {
             closeResources();
-            state = State.FAILED;
-            throw new CompletionException(new IllegalStateException("Не удалось инициализировать SQLite", exception));
+            synchronized (lifecycle) {
+                if (state != State.CLOSING && state != State.CLOSED) {
+                    state = State.FAILED;
+                }
+            }
+            throw new CompletionException(new IllegalStateException(message("sqlite.initialization-failed"), exception));
         }
     }
 
     public <T> CompletableFuture<T> submit(SqlWork<T> work) {
-        if (state != State.READY) {
-            return CompletableFuture.failedFuture(new IllegalStateException("SQLite не готов к работе"));
+        synchronized (lifecycle) {
+            if (state != State.READY) {
+                return CompletableFuture.failedFuture(new IllegalStateException(message("sqlite.not-ready")));
+            }
         }
         try {
             return CompletableFuture.supplyAsync(() -> {
                 try {
                     if (connection == null || connection.isClosed()) {
-                        throw new IllegalStateException("SQLite не готов к работе");
+                        throw new IllegalStateException(message("sqlite.not-ready"));
                     }
                     return work.run(connection);
                 } catch (SQLException exception) {
-                    throw new IllegalStateException("Не удалось выполнить операцию SQLite", exception);
+                    throw new IllegalStateException(message("sqlite.operation-failed"), exception);
                 }
             }, queue);
         } catch (RejectedExecutionException exception) {
-            return CompletableFuture.failedFuture(new IllegalStateException("SQLite закрывается", exception));
+            return CompletableFuture.failedFuture(new IllegalStateException(message("sqlite.closing"), exception));
         }
     }
 
@@ -104,43 +128,28 @@ public class Sqlite {
     }
 
     public void close() {
-        CompletableFuture<Void> startup;
         synchronized (lifecycle) {
             if (state == State.CLOSING || state == State.CLOSED) {
                 return;
             }
             state = State.CLOSING;
-            startup = startFuture;
         }
         if (Thread.currentThread() == worker) {
             closeFromQueue();
             return;
         }
-        if (startup != null && !startup.isDone()) {
-            try {
-                startup.get(10, TimeUnit.SECONDS);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                queue.shutdownNow();
-            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException exception) {
-                queue.shutdownNow();
-            }
-        }
         if (!queue.isShutdown()) {
             try {
-                Future<?> closeTask = queue.submit(this::closeResources);
+                queue.submit(this::closeResources);
                 queue.shutdown();
-                closeTask.get(10, TimeUnit.SECONDS);
+                if (!queue.awaitTermination(shutdownTimeoutSeconds, TimeUnit.SECONDS)) {
+                    queue.shutdownNow();
+                    plugin.getLogger().log(java.util.logging.Level.WARNING, message("sqlite.close-failed"));
+                }
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 queue.shutdownNow();
-                closeResources();
-            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException exception) {
-                queue.shutdownNow();
-                closeResources();
             }
-        } else {
-            closeResources();
         }
         synchronized (lifecycle) {
             state = State.CLOSED;
@@ -162,7 +171,8 @@ public class Sqlite {
                     connection.close();
                 }
             } catch (SQLException exception) {
-                plugin.getLogger().warning("Не удалось закрыть SQLite: " + exception.getMessage());
+                plugin.getLogger().log(java.util.logging.Level.WARNING,
+                        message("sqlite.close-failed"), exception);
             } finally {
                 connection = null;
             }
@@ -171,7 +181,8 @@ public class Sqlite {
             try {
                 DriverManager.deregisterDriver(driver);
             } catch (SQLException exception) {
-                plugin.getLogger().warning("Не удалось отключить драйвер SQLite: " + exception.getMessage());
+                plugin.getLogger().log(java.util.logging.Level.WARNING,
+                        message("sqlite.driver-deregister-failed"), exception);
             } finally {
                 driver = null;
             }
@@ -181,6 +192,39 @@ public class Sqlite {
     @FunctionalInterface
     public interface SqlWork<T> {
         T run(Connection connection) throws SQLException;
+    }
+
+    <T> T transaction(Connection connection, TransactionWork<T> action) throws SQLException {
+        boolean autoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            T result = action.run();
+            connection.commit();
+            return result;
+        } catch (SQLException | RuntimeException exception) {
+            try {
+                connection.rollback();
+            } catch (SQLException rollbackError) {
+                exception.addSuppressed(rollbackError);
+            }
+            throw exception;
+        } finally {
+            try {
+                connection.setAutoCommit(autoCommit);
+            } catch (SQLException restoreError) {
+                plugin.getLogger().log(java.util.logging.Level.WARNING,
+                        message("sqlite.operation-failed"), restoreError);
+            }
+        }
+    }
+
+    @FunctionalInterface
+    interface TransactionWork<T> {
+        T run() throws SQLException;
+    }
+
+    String message(String key) {
+        return messages == null ? key : messages.raw(key);
     }
 
     private enum State {

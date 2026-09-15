@@ -25,8 +25,8 @@ API использует два типа валюты:
 Добавьте SmpShop как обязательную зависимость в `plugin.yml`:
 
 ```yaml
-name: MyPlugin
-main: example.MyPlugin
+name: Plugin
+main: primer.Plugin
 version: 1.0.0
 api-version: '1.21.11'
 depend: [SmpShop]
@@ -51,7 +51,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.plugin.java.JavaPlugin;
 import ru.javaroot.api.SmpShopApi;
 
-public class MyPlugin extends JavaPlugin {
+public class Plugin extends JavaPlugin {
     private SmpShopApi shopApi;
     private NamespacedKey source;
 
@@ -64,7 +64,7 @@ public class MyPlugin extends JavaPlugin {
             return;
         }
 
-        source = new NamespacedKey(this, "my_plugin");
+        source = new NamespacedKey(this, "plugin");
     }
 }
 ```
@@ -345,7 +345,7 @@ shopApi.openShopList(viewerId, ownerId).thenAccept(result -> {
 Все события находятся в пакете `ru.javaroot.api.event`. Регистрируйте их обычным Bukkit-слушателем:
 
 ```java
-public class MyPlugin extends JavaPlugin implements Listener {
+public class Plugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
@@ -504,7 +504,7 @@ import ru.javaroot.api.event.ShopPurchaseCompletedEvent;
 
 import java.util.UUID;
 
-public class MyPlugin extends JavaPlugin implements Listener {
+public class Plugin extends JavaPlugin implements Listener {
     private SmpShopApi shopApi;
     private NamespacedKey source;
 
@@ -516,7 +516,7 @@ public class MyPlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        source = new NamespacedKey(this, "my_plugin");
+        source = new NamespacedKey(this, "plugin");
         getServer().getPluginManager().registerEvents(this, this);
 
         shopApi.awaitReady().thenRun(() -> {

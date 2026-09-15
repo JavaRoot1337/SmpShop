@@ -32,12 +32,12 @@ public class LinkStore {
                     statement.executeUpdate();
                     return code;
                 } catch (SQLException exception) {
-                    if (!exception.getMessage().toLowerCase(Locale.ROOT).contains("constraint")) {
+                    if (exception.getErrorCode() != 19) {
                         throw exception;
                     }
                 }
             }
-            throw new SQLException("Не удалось создать уникальный код привязки");
+            throw new SQLException(db.message("link.unique-code-failed"));
         });
     }
 
@@ -107,7 +107,7 @@ public class LinkStore {
             }
             return value.toString();
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("Алгоритм SHA-256 недоступен", exception);
+            throw new IllegalStateException(db.message("link.hash-algorithm-unavailable"), exception);
         }
     }
 

@@ -80,7 +80,20 @@ public class Sched {
     }
 
     public ScheduledTask asyncRepeating(long initialDelay, long period, TimeUnit unit, Consumer<ScheduledTask> task) {
-        return plugin.getServer().getAsyncScheduler().runAtFixedRate(plugin, task, initialDelay, period, unit);
+        if (!plugin.isEnabled()) {
+            return null;
+        }
+        try {
+            return plugin.getServer().getAsyncScheduler().runAtFixedRate(plugin, scheduledTask -> {
+                if (plugin.isEnabled()) {
+                    task.accept(scheduledTask);
+                } else {
+                    scheduledTask.cancel();
+                }
+            }, initialDelay, period, unit);
+        } catch (RejectedExecutionException | IllegalStateException exception) {
+            return null;
+        }
     }
 
     public enum ScheduleResult {

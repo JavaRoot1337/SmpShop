@@ -40,11 +40,11 @@ public class ShopListInv implements Listener {
     private final Msg msg;
     private final Sched sched;
     private final NamespacedKey guiKey;
-    private final NamespacedKey shopKey;
     private final NamespacedKey pageKey;
     private final NamespacedKey navKey;
     private final Map<UUID, Inventory> opened = new ConcurrentHashMap<>();
     private final Map<UUID, UUID> owners = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> generations = new ConcurrentHashMap<>();
 
     public ShopListInv(JavaPlugin plugin, ShopMgr shops, Cfg cfg, Msg msg, Sched sched) {
         this.shops = shops;
@@ -52,7 +52,6 @@ public class ShopListInv implements Listener {
         this.msg = msg;
         this.sched = sched;
         this.guiKey = new NamespacedKey(plugin, "shop-list");
-        this.shopKey = new NamespacedKey(plugin, "shop-id");
         this.pageKey = new NamespacedKey(plugin, "shop-page");
         this.navKey = new NamespacedKey(plugin, "shop-nav");
     }
@@ -62,6 +61,8 @@ public class ShopListInv implements Listener {
     }
 
     private void open(Player player, UUID ownerId, int page) {
+        UUID playerId = player.getUniqueId();
+        long generation = generations.merge(playerId, 1L, Long::sum);
         List<Shop> filtered = shops.all().stream()
                 .filter(shop -> shop.ownerId().equals(ownerId))
                 .sorted(Comparator.comparingLong(Shop::id))
@@ -74,14 +75,14 @@ public class ShopListInv implements Listener {
         List<Shop> pageShops = filtered.subList(from, to);
         List<CompletableFuture<ItemStack>> icons = pageShops.stream().map(this::icon).toList();
         CompletableFuture.allOf(icons.toArray(CompletableFuture[]::new)).thenAccept(ignored -> sched.entity(player, () -> {
-            if (!player.isOnline()) {
+            if (!player.isOnline() || !generationEquals(playerId, generation)) {
                 return;
             }
             List<ItemStack> items = icons.stream().map(CompletableFuture::join).toList();
             Inventory menu = create(current, pages, pageShops, items);
-            opened.put(player.getUniqueId(), menu);
+            opened.put(playerId, menu);
             player.openInventory(menu);
-            owners.put(player.getUniqueId(), ownerId);
+            owners.put(playerId, ownerId);
         }));
     }
 
@@ -127,7 +128,25 @@ public class ShopListInv implements Listener {
             if (opened.remove(player.getUniqueId(), event.getView().getTopInventory())) {
                 owners.remove(player.getUniqueId());
             }
+            generations.merge(player.getUniqueId(), 1L, Long::sum);
         }
+    }
+
+    public void closeAll() {
+        Map<UUID, Inventory> current = Map.copyOf(opened);
+        opened.clear();
+        owners.clear();
+        current.keySet().forEach(playerId -> generations.merge(playerId, 1L, Long::sum));
+        sched.global(() -> Bukkit.getOnlinePlayers().forEach(player -> {
+            Inventory inventory = current.get(player.getUniqueId());
+            if (inventory != null) {
+                sched.entity(player, () -> {
+                    if (player.getOpenInventory().getTopInventory() == inventory) {
+                        player.closeInventory();
+                    }
+                });
+            }
+        }));
     }
 
     private CompletableFuture<ItemStack> icon(Shop shop) {
@@ -158,7 +177,6 @@ public class ShopListInv implements Listener {
                 itemText(msg.component("list-price", Map.of("price", shop.price())))
         ));
         meta.getPersistentDataContainer().set(guiKey, PersistentDataType.STRING, "list");
-        meta.getPersistentDataContainer().set(shopKey, PersistentDataType.LONG, shop.id());
         item.setItemMeta(meta);
         return item;
     }
@@ -209,6 +227,10 @@ public class ShopListInv implements Listener {
 
     private Component itemText(Component component) {
         return component.decoration(TextDecoration.ITALIC, false);
+    }
+
+    private boolean generationEquals(UUID playerId, long generation) {
+        return generations.getOrDefault(playerId, 0L) == generation;
     }
 
 }

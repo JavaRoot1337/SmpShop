@@ -93,6 +93,10 @@ public class Cfg {
         return cfg.getInt("storage.transaction-timeout-seconds");
     }
 
+    public int shutdownTimeoutSeconds() {
+        return cfg.getInt("storage.shutdown-timeout-seconds");
+    }
+
     public int menuSize() {
         return cfg.getInt("shop.menu-size");
     }
@@ -107,6 +111,10 @@ public class Cfg {
 
     public int telegramPollIntervalSeconds() {
         return cfg.getInt("integrations.telegram.poll-interval-seconds");
+    }
+
+    public int telegramPollLongPollSeconds() {
+        return cfg.getInt("integrations.telegram.poll-long-poll-seconds");
     }
 
     public int telegramCodeTimeoutSeconds() {
@@ -134,8 +142,16 @@ public class Cfg {
         return cfg.getInt("integrations.http.connect-timeout-seconds");
     }
 
+    public int httpRequestTimeoutSeconds() {
+        return cfg.getInt("integrations.http.request-timeout-seconds");
+    }
+
     public int httpResponseLimitBytes() {
         return cfg.getInt("integrations.http.response-limit-bytes");
+    }
+
+    public String telegramApiBaseUrl() {
+        return cfg.getString("integrations.telegram.api-base-url");
     }
 
     public boolean sellerSaleSoundEnabled() {
@@ -188,18 +204,28 @@ public class Cfg {
         if (regularLimit < 1 || candidate.getInt("shop.plus-max-per-player") < regularLimit
                 || candidate.getInt("shop.pending-placement-timeout-seconds") < 1
                 || candidate.getInt("storage.transaction-timeout-seconds") < 1
+                || candidate.getInt("storage.shutdown-timeout-seconds") < 1
+                || candidate.getInt("storage.shutdown-timeout-seconds") > 300
                 || candidate.getInt("integrations.telegram.poll-interval-seconds") < 1
+                || candidate.getInt("integrations.telegram.poll-long-poll-seconds") < 0
+                || candidate.getInt("integrations.telegram.poll-long-poll-seconds") > 60
                 || candidate.getInt("integrations.telegram.link-code-timeout-seconds") < 1
                 || candidate.getInt("integrations.http.max-concurrent") < 1
                 || candidate.getInt("integrations.http.max-concurrent") > 64
                 || candidate.getInt("integrations.http.connect-timeout-seconds") < 1
                 || candidate.getInt("integrations.http.connect-timeout-seconds") > 120
+                || candidate.getInt("integrations.http.request-timeout-seconds") < 1
+                || candidate.getInt("integrations.http.request-timeout-seconds") > 300
                 || candidate.getInt("integrations.http.response-limit-bytes") < 1024
                 || candidate.getInt("integrations.http.response-limit-bytes") > 16 * 1024 * 1024
                 || !validVolume((float) candidate.getDouble("sounds.seller-sale.volume"))
                 || !validVolume((float) candidate.getDouble("sounds.buyer-purchase.volume"))
                 || !validPitch((float) candidate.getDouble("sounds.seller-sale.pitch"))
                 || !validPitch((float) candidate.getDouble("sounds.buyer-purchase.pitch"))) {
+            throw new IllegalStateException(other.raw("config-invalid-value"));
+        }
+        String telegramApi = candidate.getString("integrations.telegram.api-base-url");
+        if (telegramApi == null || !telegramApi.startsWith("https://api.telegram.org/bot")) {
             throw new IllegalStateException(other.raw("config-invalid-value"));
         }
         validateSqlitePath(candidate);

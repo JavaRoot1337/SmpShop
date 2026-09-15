@@ -17,10 +17,12 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import ru.javaroot.config.Msg;
+import ru.javaroot.config.OtherMsg;
 import ru.javaroot.currency.Balance;
 import ru.javaroot.currency.Currency;
 import ru.javaroot.data.BalanceStore;
 import ru.javaroot.scheduler.Sched;
+import ru.javaroot.logersxd.Loggers;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -38,18 +40,29 @@ public class BalanceInv implements Listener {
     private static final int PREVIOUS_SLOT = 45;
     private static final int NEXT_SLOT = 53;
 
-    private final JavaPlugin plugin;
+    private final Loggers.Channel logger;
     private final BalanceStore balances;
     private final Sched sched;
     private final Msg msg;
+    private final OtherMsg other;
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
     private final Set<UUID> closing = ConcurrentHashMap.newKeySet();
 
     public BalanceInv(JavaPlugin plugin, BalanceStore balances, Sched sched, Msg msg) {
-        this.plugin = plugin;
+        this(plugin, balances, sched, msg, new OtherMsg(plugin), new Loggers(plugin.getLogger()).gui());
+    }
+
+    public BalanceInv(JavaPlugin plugin, BalanceStore balances, Sched sched, Msg msg, OtherMsg other) {
+        this(plugin, balances, sched, msg, other, new Loggers(plugin.getLogger()).gui());
+    }
+
+    public BalanceInv(JavaPlugin plugin, BalanceStore balances, Sched sched, Msg msg, OtherMsg other,
+                      Loggers.Channel logger) {
+        this.logger = logger;
         this.balances = balances;
         this.sched = sched;
         this.msg = msg;
+        this.other = other;
     }
 
     public void open(Player player) {
@@ -64,7 +77,7 @@ public class BalanceInv implements Listener {
             showPage(session);
             player.openInventory(session.inventory);
         })).exceptionally(error -> {
-            logFailure("Не удалось загрузить баланс", error);
+            logFailure("balance-load-failed", error);
             return null;
         });
     }
@@ -236,7 +249,7 @@ public class BalanceInv implements Listener {
 
     private void close(Player player, Session session) {
         settleAndUnlock(session, player)
-                .whenComplete((ignored, error) -> logIfFailed("Не удалось сохранить баланс", error));
+                .whenComplete((ignored, error) -> logIfFailed("balance-save-result-failed", error));
     }
 
     private CompletableFuture<Void> settleAndUnlock(Session session, Player player) {
@@ -264,11 +277,11 @@ public class BalanceInv implements Listener {
         }
         return settled.thenCompose(result -> {
             if (result.status() == BalanceStore.MutationStatus.SUCCESS) {
-                returnItems(player, invalid);
-                return CompletableFuture.completedFuture(null);
+                return returnItems(player, invalid);
             }
             return recoverFailedSettle(session, player, invalid, diamondDelta, deepslateDelta,
-                    new IllegalStateException("Баланс изменился во время работы GUI: " + result.status()));
+                    new IllegalStateException(other.raw("balance-changed-during-gui",
+                            Map.of("status", result.status()))));
         });
     }
 
@@ -284,8 +297,8 @@ public class BalanceInv implements Listener {
         CompletableFuture<?> diamond = compensateFailedDelta(session, Currency.DIAMOND_ORE, diamondDelta, player);
         CompletableFuture<?> deepslate = compensateFailedDelta(session, Currency.DEEPSLATE_DIAMOND_ORE,
                 deepslateDelta, player);
-        returnItems(player, returned);
-        return CompletableFuture.allOf(diamond, deepslate)
+        CompletableFuture<Void> returnedItems = returnItems(player, returned);
+        return CompletableFuture.allOf(diamond, deepslate, returnedItems)
                 .thenCompose(ignored -> CompletableFuture.failedFuture(failure));
     }
 
@@ -299,7 +312,8 @@ public class BalanceInv implements Listener {
         return balances.change(operationId, "smpshop:balance_gui_compensation", session.playerId, currency, amount)
                 .thenAccept(result -> {
                     if (result.status() != BalanceStore.MutationStatus.SUCCESS) {
-                        throw new IllegalStateException("Не удалось компенсировать изменение баланса: " + result.status());
+                        throw new IllegalStateException(other.raw("balance-compensation-failed",
+                                Map.of("status", result.status())));
                     }
                 });
     }
@@ -312,14 +326,35 @@ public class BalanceInv implements Listener {
         }
     }
 
-    private void returnItems(Player player, List<ItemStack> items) {
-        if (player == null || !player.isOnline()) {
-            return;
+    private CompletableFuture<Void> returnItems(Player player, List<ItemStack> items) {
+        if (items.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
         }
-        for (ItemStack item : items) {
-            Map<Integer, ItemStack> overflow = player.getInventory().addItem(item);
-            overflow.values().forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
+        if (player == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException(other.raw("player-unavailable-for-return")));
         }
+        CompletableFuture<Void> returned = new CompletableFuture<>();
+        if (sched.entity(player, () -> {
+            try {
+                if (!player.isOnline()) {
+                    returned.completeExceptionally(new IllegalStateException(
+                            other.raw("player-disconnected-before-return")));
+                    return;
+                }
+                for (ItemStack item : items) {
+                    Map<Integer, ItemStack> overflow = player.getInventory().addItem(item);
+                    overflow.values().forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
+                }
+                returned.complete(null);
+            } catch (RuntimeException exception) {
+                returned.completeExceptionally(exception);
+            }
+        }, () -> returned.completeExceptionally(new IllegalStateException(
+                other.raw("player-scheduler-unavailable"))))
+                != Sched.ScheduleResult.SCHEDULED) {
+            returned.completeExceptionally(new IllegalStateException(other.raw("player-scheduler-unavailable")));
+        }
+        return returned;
     }
 
     private ItemStack navigation(String key) {
@@ -405,15 +440,15 @@ public class BalanceInv implements Listener {
         }
     }
 
-    private void logIfFailed(String message, Throwable error) {
+    private void logIfFailed(String key, Throwable error) {
         if (error != null) {
-            logFailure(message, error);
+            logFailure(key, error);
         }
     }
 
-    private void logFailure(String message, Throwable error) {
+    private void logFailure(String key, Throwable error) {
         Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
-        plugin.getLogger().warning(message + ": " + cause.getMessage());
+        logger.warning(other.raw(key, Map.of("error", String.valueOf(cause.getMessage()))));
     }
 
     private static class Session {

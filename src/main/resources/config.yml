@@ -1,3 +1,4 @@
+# Поддержка? - @javaroot
 shop:
   min-price: 1 #минимальная цена магазина
   max-price: 2304 #максимальная цена магазина
@@ -12,6 +13,7 @@ shop:
 storage:
   sqlite-file: shops.db #имя файла базы данных
   transaction-timeout-seconds: 10 #таймаут транзакции базы данных
+  shutdown-timeout-seconds: 10 #время ожидания закрытия базы данных
 
 sounds:
   seller-sale:
@@ -33,12 +35,15 @@ integrations:
   http:
     max-concurrent: 4
     connect-timeout-seconds: 10
+    request-timeout-seconds: 15
     response-limit-bytes: 1048576
   telegram:
     enabled: false #включить уведомления в Телеграме
     bot-token: '' #токен Телеграм-бота
     poll-interval-seconds: 2 #интервал запроса к Телеграм-боту
+    poll-long-poll-seconds: 1 #время ожидания ответа Телеграма
     link-code-timeout-seconds: 300 #срок действия кода Телеграма
+    api-base-url: 'https://api.telegram.org/bot'
     referral-bot: true #отправлять ссылку на бота вместо копирования кода
     user-bot: '' #имя Телеграм-бота без символа @
   discord:

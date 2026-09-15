@@ -24,6 +24,8 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import ru.javaroot.config.Msg;
+import ru.javaroot.config.OtherMsg;
+import ru.javaroot.logersxd.Loggers;
 import ru.javaroot.currency.Currency;
 import ru.javaroot.data.BalanceStore;
 import ru.javaroot.data.ShopStore;
@@ -50,8 +52,9 @@ public class TradeEventHdl {
     private final ShopStore shopStore;
     private final BalanceStore balances;
     private final Msg msg;
+    private final OtherMsg other;
     private final Sched sched;
-    private final Logger logger;
+    private final Loggers.Channel logger;
     private final TradeSessionStore sessions;
     private final TradePaymentSvc payment;
     private final TradePurchaseSvc purchase;
@@ -59,16 +62,24 @@ public class TradeEventHdl {
 
     public TradeEventHdl(JavaPlugin plugin, ShopMgr shops, ShopStore shopStore, BalanceStore balances,
                          IntegrationHub integrations, NotifySvc notifications, SoundSvc sounds, Msg msg,
-                         ItemName itemNames, Sched sched, Logger logger) {
+                         OtherMsg other, ItemName itemNames, Sched sched, Logger logger) {
+        this(plugin, shops, shopStore, balances, integrations, notifications, sounds, msg, other,
+                itemNames, sched, new Loggers(logger).trade());
+    }
+
+    public TradeEventHdl(JavaPlugin plugin, ShopMgr shops, ShopStore shopStore, BalanceStore balances,
+                         IntegrationHub integrations, NotifySvc notifications, SoundSvc sounds, Msg msg,
+                         OtherMsg other, ItemName itemNames, Sched sched, Loggers.Channel logger) {
         TradeSessionStore sessions = new TradeSessionStore();
         TradePaymentSvc payment = new TradePaymentSvc();
         TradeDeliverySvc delivery = new TradeDeliverySvc(plugin, shops, shopStore, sched, sessions);
         TradePurchaseSvc purchase = new TradePurchaseSvc(shops, shopStore, integrations, notifications,
-                sounds, msg, itemNames, sched, logger, sessions, payment, delivery);
+                sounds, msg, other, itemNames, sched, logger, sessions, payment, delivery);
         this.shops = shops;
         this.shopStore = shopStore;
         this.balances = balances;
         this.msg = msg;
+        this.other = other;
         this.sched = sched;
         this.logger = logger;
         this.sessions = sessions;
@@ -161,9 +172,9 @@ public class TradeEventHdl {
         TradeSession session = sessions.get(player.getUniqueId());
         String deliveryMarker = delivery.marker(event.getCursor());
         boolean pendingCursor = session != null && session.purchasePending
-                && deliveryMarker != null && deliveryMarker.equals("pending:" + session.transactionId);
+                && deliveryMarker != null && deliveryMarker.equals(TradeMarkers.pending(session.transactionId));
         if ((delivery.isDeliveryItem(event.getCurrentItem()) || deliveryMarker != null) && !pendingCursor) {
-            if (deliveryMarker != null && deliveryMarker.startsWith("pending:")) {
+            if (deliveryMarker != null && deliveryMarker.startsWith(TradeMarkers.PENDING_PREFIX)) {
                 event.setCancelled(true);
                 return;
             }
@@ -222,10 +233,10 @@ public class TradeEventHdl {
         TradeSession session = sessions.get(player.getUniqueId());
         String deliveryMarker = delivery.marker(event.getOldCursor());
         boolean pendingCursor = session != null && session.purchasePending
-                && deliveryMarker != null && deliveryMarker.equals("pending:" + session.transactionId);
+                && deliveryMarker != null && deliveryMarker.equals(TradeMarkers.pending(session.transactionId));
         if (deliveryMarker != null && !pendingCursor) {
             event.setCancelled(true);
-            if (deliveryMarker.startsWith("pending:")) {
+            if (deliveryMarker.startsWith(TradeMarkers.PENDING_PREFIX)) {
                 return;
             }
             if (delivery.isDeliveryPlacement(event)) {
@@ -314,14 +325,14 @@ public class TradeEventHdl {
                     if (sessions.get(player.getUniqueId()) != null) {
                         return;
                     }
-                    delivery.removeTemporaryMarkers(player);
                     if (error != null) {
-                        logger.log(Level.WARNING, "Не удалось очистить временные маркеры игрока "
-                                + player.getUniqueId(), error);
+                        logger.log(Level.WARNING, other.raw("trade-marker-cleanup-failed",
+                                Map.of("player", player.getUniqueId())), error);
                         return;
                     }
+                    delivery.removeTemporaryMarkers(player);
                     for (String transactionId : transactionIds) {
-                        delivery.removeMarker(player.getInventory(), "transaction:" + transactionId);
+                        delivery.removeMarker(player.getInventory(), TradeMarkers.transaction(transactionId));
                     }
                     delivery.deliverPending(player);
                     delivery.deliverRecovery(player);
@@ -378,8 +389,11 @@ public class TradeEventHdl {
         }
         CompletableFuture<Void> rollback = CompletableFuture.completedFuture(null);
         if (cancel && transactionId != null) {
-            rollback = shopStore.rollback(transactionId.toString(), playerId, Map.of()).thenAccept(applied -> {
+            rollback = shopStore.rollback(transactionId.toString(), playerId, false).thenAccept(applied -> {
                 if (applied) {
+                    if (player != null) {
+                        sched.entity(player, () -> purchase.removePendingPlayerItem(player, session, transactionId), () -> { });
+                    }
                     sched.global(() -> Bukkit.getPluginManager().callEvent(new ShopTransactionRolledBackEvent(
                             transactionId, session.shop.id(), playerId)));
                 }
@@ -398,16 +412,18 @@ public class TradeEventHdl {
             }
         }
         if (persistPayment || player == null || !player.isOnline()) {
-            return CompletableFuture.allOf(rollback, deposit(playerId, returned));
+            sessions.mergePendingReturn(playerId, returned);
+            return CompletableFuture.allOf(rollback, depositPendingReturn(playerId));
         }
         sessions.mergePendingReturn(playerId, returned);
         sched.entity(player, () -> {
-            EnumMap<Currency, Long> payment = sessions.removePendingReturn(playerId);
+            EnumMap<Currency, Long> payment = sessions.pendingReturn(playerId);
             if (payment != null) {
                 if (player.isOnline()) {
                     this.payment.givePayment(player, payment);
+                    sessions.removePendingReturn(playerId, payment);
                 } else {
-                    payment.forEach((currency, amount) -> balances.deposit(playerId, currency, amount));
+                    deposit(playerId, payment).thenAccept(ignored -> sessions.removePendingReturn(playerId, payment));
                 }
             }
         }, () -> depositPendingReturn(playerId));
@@ -415,8 +431,9 @@ public class TradeEventHdl {
     }
 
     private CompletableFuture<Void> depositPendingReturn(UUID playerId) {
-        EnumMap<Currency, Long> payment = sessions.removePendingReturn(playerId);
-        return payment == null ? CompletableFuture.completedFuture(null) : deposit(playerId, payment);
+        EnumMap<Currency, Long> payment = sessions.pendingReturn(playerId);
+        return payment == null ? CompletableFuture.completedFuture(null)
+                : deposit(playerId, payment).thenRun(() -> sessions.removePendingReturn(playerId, payment));
     }
 
     private CompletableFuture<Void> deposit(UUID playerId, Map<Currency, Long> payment) {

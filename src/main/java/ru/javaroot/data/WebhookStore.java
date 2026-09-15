@@ -28,6 +28,9 @@ public class WebhookStore {
     }
 
     public CompletableFuture<Void> save(UUID playerId, String webhook) {
+        if (playerId == null || webhook == null || webhook.length() > 2048) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Некорректный вебхук"));
+        }
         return db.submit(connection -> {
             try (PreparedStatement statement = connection.prepareStatement("INSERT INTO discord_webhooks(player_uuid, webhook_url, updated_at) VALUES (?, ?, ?) ON CONFLICT(player_uuid) DO UPDATE SET webhook_url = excluded.webhook_url, updated_at = excluded.updated_at")) {
                 statement.setString(1, playerId.toString());

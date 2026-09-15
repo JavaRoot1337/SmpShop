@@ -20,16 +20,23 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import ru.javaroot.logersxd.Loggers;
 
 public class Msg {
     private final JavaPlugin plugin;
     private final OtherMsg other;
+    private final Loggers.Channel logger;
     private final ItemIcon itemIcon = new ItemIcon();
     private volatile FileConfiguration messages;
 
     public Msg(JavaPlugin plugin, OtherMsg other) {
+        this(plugin, other, new Loggers(plugin.getLogger()).config());
+    }
+
+    public Msg(JavaPlugin plugin, OtherMsg other, Loggers.Channel logger) {
         this.plugin = plugin;
         this.other = other;
+        this.logger = logger;
         reload();
     }
 
@@ -74,7 +81,9 @@ public class Msg {
     }
 
     public void sendTelegramReferral(Player player, String botName, String code) {
-        String url = "https://t.me/" + botName + "?start=" + code;
+        String url = raw("telegram-referral-url-template")
+                .replace("%bot%", botName)
+                .replace("%code%", code);
         Component link = itemIcon.replace(LegacyComponentSerializer.legacyAmpersand()
                 .deserialize(messages.getString("telegram-referral-suffix")))
                 .clickEvent(ClickEvent.openUrl(url));
@@ -113,7 +122,7 @@ public class Msg {
     public String raw(String key) {
         String value = messages.getString(key);
         if (value == null) {
-            plugin.getLogger().warning(other.raw("message-key-missing", Map.of("key", key)));
+            logger.warning(other.raw("message-key-missing", Map.of("key", key)));
             return "[" + key + "]";
         }
         return value;

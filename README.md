@@ -2,7 +2,7 @@
 
 SmpShop turns ordinary chests into player-run shops. The seller sets a price for an item stack, the buyer opens the chest, places the payment, and takes the selected item. Payment uses two types of diamond ore.
 
-The plugin is designed for Paper, Folia, and Canvas. Servers from `1.21.11` through `26.2` are supported.
+One JAR is built against the Paper API `1.21.11-R0.1-SNAPSHOT` floor with Java 21 bytecode. It is intended for Paper, Folia, and Canvas: `folia-supported: true` declares region-threading support for Folia and Canvas. The build also compiles the sources against Paper API 26.2 to detect incompatible API changes.
 
 A separate [API guide](api.md) is available for developers.
 
@@ -110,6 +110,7 @@ Main command: `/smpshop`. Alias: `/shop`.
 | `/smpshop remove` | start removing any shop | `smpshop.use`, `smpshop.admin.remove` |
 | `/smpshop link tg` | issue a Telegram linking code or link | `smpshop.use`, `smpshop.link` |
 | `/smpshop link ds webhook <url>` | save a personal Discord webhook | `smpshop.use`, `smpshop.link` |
+| `/smpshop link max` | show the MAX integration status | `smpshop.use`, `smpshop.link` |
 | `/smpshop reload` | reload settings and messages | `smpshop.use`, `smpshop.admin.reload` |
 
 All commands are available to players only. Console execution is not supported.
@@ -138,12 +139,20 @@ Replacing the JAR requires a full server restart. `/smpshop reload` updates sett
 
 ### Compatibility
 
-| Server | Java |
-| --- | --- |
-| Paper or Folia `1.21.11` | 21 |
-| Paper, Folia, or Canvas `26.1+` | 25 |
+| Server | Server Java | JAR |
+| --- | --- | --- |
+| Paper, Folia, or Canvas `1.21.11` | 21 | `SmpShop-1.0.jar` |
+| Paper, Folia, or Canvas `26.2` | 25 | the same `SmpShop-1.0.jar` |
 
 Spigot and CraftBukkit without the Paper API are not supported.
+
+The regular build produces the single JAR and checks the sources against both the `1.21.11` and `26.2` APIs:
+
+```text
+.\gradlew.bat clean build
+```
+
+`1.21.11` servers require Java 21 and `26.2` servers require Java 25. Compilation does not replace a server smoke test: check loading, a shop purchase, and shutdown on the server software you deploy.
 
 ## Configuration
 
@@ -180,10 +189,11 @@ YAML is validated before it is reloaded. If the new configuration contains an er
 ### Message files
 
 - `message.yml` contains in-game messages, menu names, hints, and command text;
-- `message_other.yml` contains technical error messages;
+- `message_other.yml` contains general technical messages;
+- `db_locate.yml` contains SQLite, transaction, recovery diagnostics, and item names for external notifications;
 - `message_tg.yml` contains Telegram bot messages;
 - `message_ds.yml` contains Discord messages;
-- `logger_locate.yml` contains item names for external notifications.
+- `logger_locate.yml` is retained for migration of older installations and is not used at runtime.
 
 In `message.yml`, you can change colors using standard Minecraft codes such as `&b` or `&#FFFFFF`.
 
@@ -215,7 +225,7 @@ The seller's balance is saved regardless of whether the notification was deliver
 
 The bot accepts `/start <code>` and `/code <code>`. The code is single-use and expires after a limited time. Telegram receives sale notifications only.
 
-If `referral-bot: true`, the player receives a link in the form `https://t.me/<bot>?start=<code>`. If the setting is disabled, the plugin issues a single-use code for `/code`.
+If `referral-bot: true`, the player receives a link using the `telegram-referral-url-template` from `message.yml`. If the setting is disabled, the plugin issues a single-use code for `/code`.
 
 ### Discord
 
@@ -254,8 +264,3 @@ If a player leaves during a purchase or the server stops at an unsuitable moment
 - each shop serves one buyer at a time;
 - the shop list does not open the chest remotely;
 - deleting a world or its world file does not restore chest contents from SQLite;
-- `/smpshop link max` appears in an old help message, but the current version has no working MAX integration.
-
-## License
-
-[MIT](LICENSE)

@@ -1,15 +1,15 @@
 package ru.javaroot.integration;
 
-import org.bukkit.Material;
 import org.bukkit.configuration.file.YamlConfiguration;
 import ru.javaroot.config.Cfg;
-import ru.javaroot.config.LoggerLoc;
+import ru.javaroot.config.DbLoc;
 import ru.javaroot.config.OtherMsg;
 import ru.javaroot.data.LinkStore;
 import ru.javaroot.data.WebhookStore;
 import ru.javaroot.integration.discord.DiscordWebhook;
 import ru.javaroot.integration.telegram.TelegramBot;
 import ru.javaroot.scheduler.Sched;
+import ru.javaroot.logersxd.Loggers;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.Map;
@@ -18,32 +18,43 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 public class IntegrationHub {
-    private final Logger logger;
+    private final Loggers.Channel logger;
     private final LinkStore links;
     private final WebhookStore webhooks;
     private final ExternalMsg telegramMessages;
     private final ExternalMsg discordMessages;
     private final Cfg cfg;
     private final OtherMsg other;
-    private final LoggerLoc loggerLoc;
+    private final DbLoc dbLoc;
     private volatile BoundedHttp http;
     private final Map<UUID, String> webhookUrls = new ConcurrentHashMap<>();
     private final Map<UUID, DiscordWebhook> discordWebhooks = new ConcurrentHashMap<>();
     private TelegramBot telegram;
 
     public IntegrationHub(Logger logger, LinkStore links, WebhookStore webhooks, Cfg cfg, OtherMsg other,
-                          LoggerLoc loggerLoc,
+                          DbLoc dbLoc,
                           ExternalMsg telegramMessages, ExternalMsg discordMessages) {
+        this(new Loggers(logger).integrations(), links, webhooks, cfg, other, dbLoc,
+                telegramMessages, discordMessages);
+    }
+
+    public IntegrationHub(Loggers logs, LinkStore links, WebhookStore webhooks, Cfg cfg, OtherMsg other,
+                          DbLoc dbLoc, ExternalMsg telegramMessages, ExternalMsg discordMessages) {
+        this(logs.integrations(), links, webhooks, cfg, other, dbLoc, telegramMessages, discordMessages);
+    }
+
+    public IntegrationHub(Loggers.Channel logger, LinkStore links, WebhookStore webhooks, Cfg cfg, OtherMsg other,
+                          DbLoc dbLoc, ExternalMsg telegramMessages, ExternalMsg discordMessages) {
         this.logger = logger;
         this.links = links;
         this.webhooks = webhooks;
         this.cfg = cfg;
         this.other = other;
-        this.loggerLoc = loggerLoc;
+        this.dbLoc = dbLoc;
         this.telegramMessages = telegramMessages;
         this.discordMessages = discordMessages;
         this.http = new BoundedHttp(cfg.httpMaxConcurrent(), cfg.httpConnectTimeoutSeconds(),
-                cfg.httpResponseLimitBytes());
+                cfg.httpResponseLimitBytes(), other);
     }
 
     public synchronized void start(Sched sched) {
@@ -51,8 +62,9 @@ public class IntegrationHub {
             if (cfg.telegramToken() == null || cfg.telegramToken().isBlank()) {
                 logger.warning(other.raw("telegram-token-empty-log"));
             } else {
-                telegram = new TelegramBot(logger, links, telegramMessages, other, loggerLoc,
-                        cfg.telegramToken(), cfg.telegramPollIntervalSeconds(), http);
+                telegram = new TelegramBot(logger, links, telegramMessages, other, dbLoc,
+                        cfg.telegramToken(), cfg.telegramApiBaseUrl(), cfg.telegramPollIntervalSeconds(),
+                        cfg.telegramPollLongPollSeconds(), cfg.httpRequestTimeoutSeconds(), http);
                 telegram.start(sched);
             }
         }
@@ -64,7 +76,8 @@ public class IntegrationHub {
         saved.forEach((playerId, webhook) -> {
             if (DiscordWebhook.isValid(webhook)) {
                 webhookUrls.put(playerId, webhook);
-                discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other, loggerLoc, http));
+                discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other, dbLoc,
+                        cfg.httpRequestTimeoutSeconds(), http));
             }
         });
     }
@@ -84,10 +97,11 @@ public class IntegrationHub {
             telegram = null;
         }
         http = new BoundedHttp(cfg.httpMaxConcurrent(), cfg.httpConnectTimeoutSeconds(),
-                cfg.httpResponseLimitBytes());
+                cfg.httpResponseLimitBytes(), other);
         discordWebhooks.clear();
         webhookUrls.forEach((playerId, webhook) -> discordWebhooks.put(playerId,
-                new DiscordWebhook(logger, webhook, discordMessages, other, loggerLoc, http)));
+                new DiscordWebhook(logger, webhook, discordMessages, other, dbLoc,
+                        cfg.httpRequestTimeoutSeconds(), http)));
         start(sched);
     }
 
@@ -104,7 +118,8 @@ public class IntegrationHub {
         }
         return webhooks.save(playerId, webhook).thenApply(ignored -> {
             webhookUrls.put(playerId, webhook);
-            discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other, loggerLoc, http));
+            discordWebhooks.put(playerId, new DiscordWebhook(logger, webhook, discordMessages, other, dbLoc,
+                    cfg.httpRequestTimeoutSeconds(), http));
             return true;
         });
     }
@@ -122,22 +137,22 @@ public class IntegrationHub {
     }
 
     public void reloadMessages() {
-        loggerLoc.reload();
+        dbLoc.reload();
         telegramMessages.reload();
         discordMessages.reload();
     }
 
     public MessageState messageState() {
-        return new MessageState(loggerLoc.snapshot(), telegramMessages.snapshot(), discordMessages.snapshot());
+        return new MessageState(dbLoc.snapshot(), telegramMessages.snapshot(), discordMessages.snapshot());
     }
 
     public void restoreMessages(MessageState state) {
-        loggerLoc.restore(state.loggerNames());
+        dbLoc.restore(state.dbMessages());
         telegramMessages.restore(state.telegram());
         discordMessages.restore(state.discord());
     }
 
-    public record MessageState(Map<Material, String> loggerNames,
+    public record MessageState(Map<String, String> dbMessages,
                                YamlConfiguration telegram,
                                YamlConfiguration discord) {
     }
