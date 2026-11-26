@@ -1,6 +1,6 @@
 # SmpShop API v1
 
-Public contract in `ru.javaroot.api` and `ru.javaroot.api.event`, bundled inside `SmpShop-2.0.jar`.
+Public contract in `ru.javaroot.api` and `ru.javaroot.api.event`, bundled inside `SmpShop-2.0.1.jar`.
 
 ## Entry points
 
@@ -29,7 +29,7 @@ dependencies:
 
 ```kotlin
 dependencies {
-    compileOnly(files("libs/SmpShop-2.0.jar"))
+    compileOnly(files("libs/SmpShop-2.0.1.jar"))
 }
 ```
 
