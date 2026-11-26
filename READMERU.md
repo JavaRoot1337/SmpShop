@@ -58,8 +58,9 @@ gradle clean check build
 - `messages.yml` — сообщения, заголовки меню, шаблоны Telegram/Discord, названия предметов (цвета `&` и `&#FFFFFF`, плейсхолдеры `%var%`)
 - `shops.db` — база SQLite WAL (`shops`, `balances`, `transactions`, `item_recovery`, `notifications`, `social_links`, `link_codes`, `discord_webhooks`)
 
-## API для разработчиков
+## Документация
 
-См. [документацию API](apiru.md).
+- [Подробное руководство](guideru.md) — механика, защита, баланс, команды, конфиги, БД
+- [Документация API](apiru.md) — Java API, события, контракт потоков
 
 [English documentation](README.md)
