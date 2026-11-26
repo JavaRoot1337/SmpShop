@@ -1,6 +1,6 @@
 # SmpShop Guide
 
-Full usage, mechanics, commands, configuration, and storage reference for `SmpShop 2.0`.
+Full usage, mechanics, commands, configuration, and storage reference for `SmpShop 2.0.1`.
 
 ## Navigation
 
