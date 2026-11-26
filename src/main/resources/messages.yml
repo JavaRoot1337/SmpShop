@@ -1,0 +1,101 @@
+# общие ответы команд
+loading: "&7Плагин ещё загружает базу."
+no-player: "&cКоманда доступна только игроку."
+no-permission: "&cНет прав."
+help: |
+  &bМагазин &8» &7команды
+  &b/smpshop set <цена> &8— &7создать магазин
+  &b/smpshop balance &8— &7открыть баланс
+  &b/smpshop delete &8— &7удалить свой магазин
+  &b/smpshop remove &8— &7удалить любой магазин
+  &b/smpshop list [игрок] &8— &7показать магазины
+  &b/smpshop link tg &8— &7привязать Telegram
+  &b/smpshop link ds webhook <url> &8— &7сохранить Discord webhook
+  &b/smpshop reload &8— &7перезагрузить конфиг
+price-invalid: "&cЦена должна быть целым числом."
+price-range: "&cЦена должна быть от &b%min% &cдо &b%max%&c."
+shop-limit: "&cДостигнут лимит магазинов: &b%limit%&c."
+placement-pending: "&7Цена &b%price% АР&7 сохранена. Нажмите ПКМ по обычному сундуку."
+shop-created: "&7Магазин создан. Цена слота: &b%price% АР&7."
+shop-conflict: "&cЭтот сундук уже занят другим магазином."
+shop-not-found: "&cМагазин или игрок не найден."
+shop-delete-pending: "&7Нажмите ПКМ по своему магазину для удаления."
+shop-remove-pending: "&7Нажмите ПКМ по магазину для удаления."
+shop-deleted: "&7Магазин удалён. Предметы в сундуке сохранены."
+shop-not-owner: "&cЭто не ваш магазин."
+reload: "&7Конфиг перезагружен за &b%ms% мс&7."
+reload-failed: "&cОшибка перезагрузки конфига. Проверьте консоль."
+
+# привязка уведомлений
+link-code-prefix: "&7Код для Telegram: &b"
+link-code-suffix: " &7(клик)"
+integration-disabled: "&cЭта интеграция отключена или не настроена."
+discord-webhook-saved: "&7Вебхук Discord сохранён."
+discord-webhook-invalid: "&cУкажите корректный вебхук: &7/smpshop link ds webhook <url>"
+telegram-referral-not-configured: "&cНе указан integrations.telegram.user-bot в config.yml."
+telegram-referral-prefix: "&7Откройте ссылку для привязки Telegram: &b"
+telegram-referral-suffix: " &7(нажмите на ссылку)"
+telegram-referral-url-template: "https://t.me/%bot%?start=%code%"
+
+# меню баланса и списка магазинов
+balance-title: "&8Баланс руды"
+balance-previous: "&fНазад"
+balance-next: "&fВперёд"
+list-title: "&8Магазины: страница %page%"
+list-shop-name: "&7Магазин #%id%"
+list-owner: "&7Владелец: &b%owner%"
+list-coordinates: "&7Координаты: &b%x% %y% %z%"
+list-earned: "&7Заработано: &b%earned% АР"
+list-sold: "&7Продано предметов: &b%sold%"
+list-price: "&7Цена за слот: &b%price% АР"
+list-next: "&fВперёд"
+list-previous: "&fНазад"
+
+# торговля и уведомления
+sale-chat: "&bНовая продажа! &7Магазин &b%shop%&7: &b%item% x%items% &7на &b%amount% АР&7."
+offline-sales: "&7За время вашего отсутствия магазины принесли &b%amount% АР&7."
+purchase-success: "&7Покупка: &b%item% x%items% &7за &b%amount% АР&7."
+purchase-insufficient: "&cНедостаточно руды для оплаты."
+purchase-full-inventory: "&cНет места в инвентаре."
+shop-busy: "&cМагазин сейчас занят другим игроком."
+
+# сообщения telegram-бота
+telegram:
+  sale: "Новая продажа! Магазин %shop%: %item% x%items% за %amount% АР"
+  linked: "Аккаунт привязан."
+  invalid-code: "Код неверный, просрочен или уже использован."
+  usage: "Используйте /code <16-значный код> или ссылку привязки из игры."
+
+# сообщения discord webhook
+discord:
+  sale: "Новая продажа\nМагазин: %shop%\nТовар: %item% x%items%\nСумма: %amount% АР"
+
+# названия предметов для внешних уведомлений
+items:
+  DIAMOND_SWORD: "Алмазный меч"
+  DIAMOND_PICKAXE: "Алмазная кирка"
+  DIAMOND_AXE: "Алмазный топор"
+  DIAMOND_SHOVEL: "Алмазная лопата"
+  DIAMOND_HOE: "Алмазная мотыга"
+  NETHERITE_SWORD: "Незеритовый меч"
+  NETHERITE_PICKAXE: "Незеритовая кирка"
+  NETHERITE_AXE: "Незеритовый топор"
+  NETHERITE_SHOVEL: "Незеритовая лопата"
+  NETHERITE_HOE: "Незеритовая мотыга"
+  DIAMOND_HELMET: "Алмазный шлем"
+  DIAMOND_CHESTPLATE: "Алмазный нагрудник"
+  DIAMOND_LEGGINGS: "Алмазные поножи"
+  DIAMOND_BOOTS: "Алмазные ботинки"
+  NETHERITE_HELMET: "Незеритовый шлем"
+  NETHERITE_CHESTPLATE: "Незеритовый нагрудник"
+  NETHERITE_LEGGINGS: "Незеритовые поножи"
+  NETHERITE_BOOTS: "Незеритовые ботинки"
+  MACE: "Булава"
+  TOTEM_OF_UNDYING: "Тотем бессмертия"
+  SHIELD: "Щит"
+  BOW: "Лук"
+  CROSSBOW: "Арбалет"
+  TRIDENT: "Трезубец"
+  ELYTRA: "Элитры"
+  GOLDEN_APPLE: "Золотое яблоко"
+  ENCHANTED_GOLDEN_APPLE: "Зачарованное золотое яблоко"
