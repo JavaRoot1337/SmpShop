@@ -58,8 +58,9 @@ Files in `plugins/SmpShop/`:
 - `messages.yml` — in-game messages, GUI labels, Telegram/Discord templates, item names (`&` and `&#FFFFFF` colors, `%var%` placeholders)
 - `shops.db` — SQLite WAL database (`shops`, `balances`, `transactions`, `item_recovery`, `notifications`, `social_links`, `link_codes`, `discord_webhooks`)
 
-## Developer API
+## Documentation
 
-See [API guide](api.md).
+- [Usage guide](guide.md) — mechanics, protection, balance, commands, config, storage
+- [API guide](api.md) — Java API, events, threading contract
 
 [Русская документация](READMERU.md)
