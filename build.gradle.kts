@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "ru.javaroot.smpshop"
-version = "2.0"
+version = "2.0.1"
 
 val targetJava = 21
 val paperApiVersion = property("paperApiVersion").toString()
