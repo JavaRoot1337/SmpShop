@@ -65,4 +65,6 @@ dependencies {
 - Методы API можно вызывать из любого потока на Paper и Folia
 - Поток завершения `CompletionStage` не фиксирован; вызовы Bukkit/игрока переводите на нужный планировщик Paper/Folia
 
-[English API guide](api.md)
+---
+
+[Обзор](READMERU.md) · [Подробное руководство](guideru.md) · [English API guide](api.md)
