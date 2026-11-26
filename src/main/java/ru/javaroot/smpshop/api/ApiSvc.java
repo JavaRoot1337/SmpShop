@@ -180,8 +180,8 @@ public final class ApiSvc implements SmpShopApi {
     private ApiStatus unavailableStatus() {
         return switch (state) {
             case READY -> null;
-            case STARTING, FAILED -> ApiState.NOT_READY;
-            case SHUTTING_DOWN, STOPPED -> ApiState.SHUTTING_DOWN;
+            case STARTING, FAILED -> ApiStatus.NOT_READY;
+            case SHUTTING_DOWN, STOPPED -> ApiStatus.SHUTTING_DOWN;
         };
     }
 }
