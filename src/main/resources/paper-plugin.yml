@@ -1,0 +1,7 @@
+name: SmpShop
+version: '${version}'
+main: ru.javaroot.smpshop.SmpShop
+api-version: '1.21'
+folia-supported: true
+description: Магазины игроков на сундуках для Paper и Folia
+authors: [JavaRoot]
