@@ -81,7 +81,7 @@ tasks {
         source(sourceSets.main.get().allJava)
         classpath = modernPaperApi
         destinationDirectory.set(layout.buildDirectory.dir("classes/java/modern"))
-        javaCompiler.set(javaToolchains.compilerFor {
+        javaCompiler.set(project.extensions.getByType(JavaToolchainService::class.java).compilerFor {
             languageVersion.set(JavaLanguageVersion.of(25))
         })
         options.encoding = "UTF-8"
