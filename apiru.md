@@ -1,6 +1,6 @@
 # SmpShop API v1
 
-Публичный контракт в пакетах `ru.javaroot.api` и `ru.javaroot.api.event`, встроен в `SmpShop-2.0.jar`.
+Публичный контракт в пакетах `ru.javaroot.api` и `ru.javaroot.api.event`, встроен в `SmpShop-2.0.1.jar`.
 
 ## Точки входа
 
@@ -29,7 +29,7 @@ dependencies:
 
 ```kotlin
 dependencies {
-    compileOnly(files("libs/SmpShop-2.0.jar"))
+    compileOnly(files("libs/SmpShop-2.0.1.jar"))
 }
 ```
 
