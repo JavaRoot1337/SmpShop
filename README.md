@@ -16,7 +16,7 @@ Chest-based player shops for Paper and Folia `1.21–26.3`.
 gradle clean check build
 ```
 
-Output JAR: `build/libs/SmpShop-2.0.jar`.
+Output JAR: `build/libs/SmpShop-2.0.1.jar`.
 
 ## Currency
 
