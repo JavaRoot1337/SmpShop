@@ -1,7 +1,0 @@
-name: SmpShopApiConsumer
-version: '1.0'
-main: ru.javaroot.consumer.ApiConsumer
-api-version: '${apiVersion}'
-folia-supported: true
-depend: [SmpShop]
-description: проверка публичного интерфейса SmpShop
