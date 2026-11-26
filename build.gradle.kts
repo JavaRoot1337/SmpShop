@@ -7,13 +7,13 @@ group = "ru.javaroot.smpshop"
 version = "2.0"
 
 val targetJava = 21
-val paperApiVersion: String by project
-val modernPaperApiVersion: String by project
-val sqliteVersion: String by project
-val gsonVersion: String by project
-val junitVersion: String by project
+val paperApiVersion = property("paperApiVersion").toString()
+val modernPaperApiVersion = property("modernPaperApiVersion").toString()
+val sqliteVersion = property("sqliteVersion").toString()
+val gsonVersion = property("gsonVersion").toString()
+val junitVersion = property("junitVersion").toString()
 
-val modernPaperApi by configurations.creating {
+val modernPaperApi = configurations.create("modernPaperApi") {
     extendsFrom(configurations.implementation.get())
 }
 
