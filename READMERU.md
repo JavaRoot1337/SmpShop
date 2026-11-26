@@ -16,7 +16,7 @@
 gradle clean check build
 ```
 
-Итоговый JAR: `build/libs/SmpShop-2.0.jar`.
+Итоговый JAR: `build/libs/SmpShop-2.0.1.jar`.
 
 ## Валюта
 
