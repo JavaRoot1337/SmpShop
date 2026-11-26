@@ -1,63 +1,63 @@
 # общие ответы команд
-loading: "&7Плагин ещё загружает базу."
-no-player: "&cКоманда доступна только игроку."
-no-permission: "&cНет прав."
+loading: "&7плᴀгиʜ ᴇщё зᴀгᴘʏжᴀᴇᴛ бᴀзʏ."
+no-player: "&cᴋᴏᴍᴀʜдᴀ дᴏᴄᴛʏпʜᴀ ᴛᴏльᴋᴏ игᴘᴏᴋʏ."
+no-permission: "&cʜᴇᴛ пᴘᴀʙ."
 help: |
-  &bМагазин &8» &7команды
-  &b/smpshop set <цена> &8— &7создать магазин
-  &b/smpshop balance &8— &7открыть баланс
-  &b/smpshop delete &8— &7удалить свой магазин
-  &b/smpshop remove &8— &7удалить любой магазин
-  &b/smpshop list [игрок] &8— &7показать магазины
-  &b/smpshop link tg &8— &7привязать Telegram
-  &b/smpshop link ds webhook <url> &8— &7сохранить Discord webhook
-  &b/smpshop reload &8— &7перезагрузить конфиг
-price-invalid: "&cЦена должна быть целым числом."
-price-range: "&cЦена должна быть от &b%min% &cдо &b%max%&c."
-shop-limit: "&cДостигнут лимит магазинов: &b%limit%&c."
-placement-pending: "&7Цена &b%price% АР&7 сохранена. Нажмите ПКМ по обычному сундуку."
-shop-created: "&7Магазин создан. Цена слота: &b%price% АР&7."
-shop-conflict: "&cЭтот сундук уже занят другим магазином."
-shop-not-found: "&cМагазин или игрок не найден."
-shop-delete-pending: "&7Нажмите ПКМ по своему магазину для удаления."
-shop-remove-pending: "&7Нажмите ПКМ по магазину для удаления."
-shop-deleted: "&7Магазин удалён. Предметы в сундуке сохранены."
-shop-not-owner: "&cЭто не ваш магазин."
-reload: "&7Конфиг перезагружен за &b%ms% мс&7."
-reload-failed: "&cОшибка перезагрузки конфига. Проверьте консоль."
+  &bᴍᴀгᴀзиʜ &8» &7ᴋᴏᴍᴀʜды
+  &b/smpshop set <цᴇʜᴀ> &8— &7ᴄᴏздᴀᴛь ᴍᴀгᴀзиʜ
+  &b/smpshop balance &8— &7ᴏᴛᴋᴘыᴛь бᴀлᴀʜᴄ
+  &b/smpshop delete &8— &7ʏдᴀлиᴛь ᴄʙᴏй ᴍᴀгᴀзиʜ
+  &b/smpshop remove &8— &7ʏдᴀлиᴛь любᴏй ᴍᴀгᴀзиʜ
+  &b/smpshop list [игᴘᴏᴋ] &8— &7пᴏᴋᴀзᴀᴛь ᴍᴀгᴀзиʜы
+  &b/smpshop link tg &8— &7пᴘиʙязᴀᴛь ᴛᴇʟᴇɢʀᴀᴍ
+  &b/smpshop link ds webhook <url> &8— &7ᴄᴏxᴘᴀʜиᴛь ᴅɪsᴄᴏʀᴅ ᴡᴇʙʜᴏᴏᴋ
+  &b/smpshop reload &8— &7пᴇᴘᴇзᴀгᴘʏзиᴛь ᴋᴏʜфиг
+price-invalid: "&cцᴇʜᴀ дᴏлжʜᴀ быᴛь цᴇлыᴍ чиᴄлᴏᴍ."
+price-range: "&cцᴇʜᴀ дᴏлжʜᴀ быᴛь ᴏᴛ &b%min% &cдᴏ &b%max%&c."
+shop-limit: "&cдᴏᴄᴛигʜʏᴛ лиᴍиᴛ ᴍᴀгᴀзиʜᴏʙ: &b%limit%&c."
+placement-pending: "&7цᴇʜᴀ &b%price% ᴀᴘ&7 ᴄᴏxᴘᴀʜᴇʜᴀ. ʜᴀжᴍиᴛᴇ пᴋᴍ пᴏ ᴏбычʜᴏᴍʏ ᴄʏʜдʏᴋʏ."
+shop-created: "&7ᴍᴀгᴀзиʜ ᴄᴏздᴀʜ. цᴇʜᴀ ᴄлᴏᴛᴀ: &b%price% ᴀᴘ&7."
+shop-conflict: "&cэᴛᴏᴛ ᴄʏʜдʏᴋ ʏжᴇ зᴀʜяᴛ дᴘʏгиᴍ ᴍᴀгᴀзиʜᴏᴍ."
+shop-not-found: "&cᴍᴀгᴀзиʜ или игᴘᴏᴋ ʜᴇ ʜᴀйдᴇʜ."
+shop-delete-pending: "&7ʜᴀжᴍиᴛᴇ пᴋᴍ пᴏ ᴄʙᴏᴇᴍʏ ᴍᴀгᴀзиʜʏ для ʏдᴀлᴇʜия."
+shop-remove-pending: "&7ʜᴀжᴍиᴛᴇ пᴋᴍ пᴏ ᴍᴀгᴀзиʜʏ для ʏдᴀлᴇʜия."
+shop-deleted: "&7ᴍᴀгᴀзиʜ ʏдᴀлёʜ. пᴘᴇдᴍᴇᴛы ʙ ᴄʏʜдʏᴋᴇ ᴄᴏxᴘᴀʜᴇʜы."
+shop-not-owner: "&cэᴛᴏ ʜᴇ ʙᴀш ᴍᴀгᴀзиʜ."
+reload: "&7ᴋᴏʜфиг пᴇᴘᴇзᴀгᴘʏжᴇʜ зᴀ &b%ms% ᴍᴄ&7."
+reload-failed: "&cᴏшибᴋᴀ пᴇᴘᴇзᴀгᴘʏзᴋи ᴋᴏʜфигᴀ. пᴘᴏʙᴇᴘьᴛᴇ ᴋᴏʜᴄᴏль."
 
 # привязка уведомлений
-link-code-prefix: "&7Код для Telegram: &b"
-link-code-suffix: " &7(клик)"
-integration-disabled: "&cЭта интеграция отключена или не настроена."
-discord-webhook-saved: "&7Вебхук Discord сохранён."
-discord-webhook-invalid: "&cУкажите корректный вебхук: &7/smpshop link ds webhook <url>"
-telegram-referral-not-configured: "&cНе указан integrations.telegram.user-bot в config.yml."
-telegram-referral-prefix: "&7Откройте ссылку для привязки Telegram: &b"
-telegram-referral-suffix: " &7(нажмите на ссылку)"
+link-code-prefix: "&7ᴋᴏд для ᴛᴇʟᴇɢʀᴀᴍ: &b"
+link-code-suffix: " &7(ᴋлиᴋ)"
+integration-disabled: "&cэᴛᴀ иʜᴛᴇгᴘᴀция ᴏᴛᴋлючᴇʜᴀ или ʜᴇ ʜᴀᴄᴛᴘᴏᴇʜᴀ."
+discord-webhook-saved: "&7ʙᴇбxʏᴋ ᴅɪsᴄᴏʀᴅ ᴄᴏxᴘᴀʜёʜ."
+discord-webhook-invalid: "&cʏᴋᴀжиᴛᴇ ᴋᴏᴘᴘᴇᴋᴛʜый ʙᴇбxʏᴋ: &7/smpshop link ds webhook <url>"
+telegram-referral-not-configured: "&cʜᴇ ʏᴋᴀзᴀʜ integrations.telegram.user-bot ʙ config.yml."
+telegram-referral-prefix: "&7ᴏᴛᴋᴘᴏйᴛᴇ ᴄᴄылᴋʏ для пᴘиʙязᴋи ᴛᴇʟᴇɢʀᴀᴍ: &b"
+telegram-referral-suffix: " &7(ʜᴀжᴍиᴛᴇ ʜᴀ ᴄᴄылᴋʏ)"
 telegram-referral-url-template: "https://t.me/%bot%?start=%code%"
 
 # меню баланса и списка магазинов
-balance-title: "&8Баланс руды"
-balance-previous: "&fНазад"
-balance-next: "&fВперёд"
-list-title: "&8Магазины: страница %page%"
-list-shop-name: "&7Магазин #%id%"
-list-owner: "&7Владелец: &b%owner%"
-list-coordinates: "&7Координаты: &b%x% %y% %z%"
-list-earned: "&7Заработано: &b%earned% АР"
-list-sold: "&7Продано предметов: &b%sold%"
-list-price: "&7Цена за слот: &b%price% АР"
-list-next: "&fВперёд"
-list-previous: "&fНазад"
+balance-title: "&8бᴀлᴀʜᴄ ᴘʏды"
+balance-previous: "&fʜᴀзᴀд"
+balance-next: "&fʙпᴇᴘёд"
+list-title: "&8ᴍᴀгᴀзиʜы: ᴄᴛᴘᴀʜицᴀ %page%"
+list-shop-name: "&7ᴍᴀгᴀзиʜ #%id%"
+list-owner: "&7ʙлᴀдᴇлᴇц: &b%owner%"
+list-coordinates: "&7ᴋᴏᴏᴘдиʜᴀᴛы: &b%x% %y% %z%"
+list-earned: "&7зᴀᴘᴀбᴏᴛᴀʜᴏ: &b%earned% ᴀᴘ"
+list-sold: "&7пᴘᴏдᴀʜᴏ пᴘᴇдᴍᴇᴛᴏʙ: &b%sold%"
+list-price: "&7цᴇʜᴀ зᴀ ᴄлᴏᴛ: &b%price% ᴀᴘ"
+list-next: "&fʙпᴇᴘёд"
+list-previous: "&fʜᴀзᴀд"
 
 # торговля и уведомления
-sale-chat: "&bНовая продажа! &7Магазин &b%shop%&7: &b%item% x%items% &7на &b%amount% АР&7."
-offline-sales: "&7За время вашего отсутствия магазины принесли &b%amount% АР&7."
-purchase-success: "&7Покупка: &b%item% x%items% &7за &b%amount% АР&7."
-purchase-insufficient: "&cНедостаточно руды для оплаты."
-purchase-full-inventory: "&cНет места в инвентаре."
-shop-busy: "&cМагазин сейчас занят другим игроком."
+sale-chat: "&bʜᴏʙᴀя пᴘᴏдᴀжᴀ! &7ᴍᴀгᴀзиʜ &b%shop%&7: &b%item% x%items% &7ʜᴀ &b%amount% ᴀᴘ&7."
+offline-sales: "&7зᴀ ʙᴘᴇᴍя ʙᴀшᴇгᴏ ᴏᴛᴄʏᴛᴄᴛʙия ᴍᴀгᴀзиʜы пᴘиʜᴇᴄли &b%amount% ᴀᴘ&7."
+purchase-success: "&7пᴏᴋʏпᴋᴀ: &b%item% x%items% &7зᴀ &b%amount% ᴀᴘ&7."
+purchase-insufficient: "&cʜᴇдᴏᴄᴛᴀᴛᴏчʜᴏ ᴘʏды для ᴏплᴀᴛы."
+purchase-full-inventory: "&cʜᴇᴛ ᴍᴇᴄᴛᴀ ʙ иʜʙᴇʜᴛᴀᴘᴇ."
+shop-busy: "&cᴍᴀгᴀзиʜ ᴄᴇйчᴀᴄ зᴀʜяᴛ дᴘʏгиᴍ игᴘᴏᴋᴏᴍ."
 
 # сообщения telegram-бота
 telegram:
