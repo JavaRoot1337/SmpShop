@@ -1,36 +1,40 @@
-# Поддержка? - @javaroot
+# настройки магазина
 shop:
-  min-price: 1 #минимальная цена магазина
-  max-price: 2304 #максимальная цена магазина
-  max-per-player: 10 #обычный лимит магазинов
-  plus-max-per-player: 50 #увеличенный лимит магазинов
-  menu-size: 36 #размер меню списка магазинов
+  min-price: 1 # минимальная цена слота
+  max-price: 2304 # максимальная цена слота
+  max-per-player: 10 # обычный лимит магазинов
+  plus-max-per-player: 50 # лимит с правом smpshop.plus
+  menu-size: 36 # размер меню списка (36 или 54)
   allowed-menu-sizes:
-    - 36 #размер меню на 27 магазинов
-    - 54 #размер меню на 45 магазинов
-  pending-placement-timeout-seconds: 60 #время ожидания установки магазина
+    - 36
+    - 54
+  pending-placement-timeout-seconds: 60 # таймаут клика по сундуку (сек)
 
+# база данных
 storage:
-  sqlite-file: shops.db #имя файла базы данных
-  transaction-timeout-seconds: 10 #таймаут транзакции базы данных
-  shutdown-timeout-seconds: 10 #время ожидания закрытия базы данных
+  sqlite-file: shops.db # файл sqlite
+  transaction-timeout-seconds: 10 # busy_timeout (сек)
+  shutdown-timeout-seconds: 10 # ожидание закрытия при остановке (сек)
 
+# звуки
 sounds:
   seller-sale:
-    enabled: true #включить звук продажи
-    sound: entity.player.levelup #звук продажи
-    volume: 1.0 #громкость звука продажи
-    pitch: 0.9 #тон звука продажи
+    enabled: true
+    sound: entity.player.levelup
+    volume: 1.0
+    pitch: 0.9
   buyer-purchase:
-    enabled: true #включить звук покупки
-    sound: block.vault.insert_fail #звук покупки
-    volume: 1.0 #громкость звука покупки
-    pitch: 1.0 #тон звука покупки
+    enabled: true
+    sound: block.vault.insert_item_fail
+    volume: 1.0
+    pitch: 1.0
 
+# уведомления в игре
 notifications:
-  offline-enabled: true #сохранять уведомления для продавца не в сети
-  join-message-enabled: true #показывать уведомление при входе продавца
+  offline-enabled: true # копить сумму продаж офлайн-продавцу
+  join-message-enabled: true # показывать итог при входе
 
+# интеграции
 integrations:
   http:
     max-concurrent: 4
@@ -38,13 +42,13 @@ integrations:
     request-timeout-seconds: 15
     response-limit-bytes: 1048576
   telegram:
-    enabled: false #включить уведомления в Телеграме
-    bot-token: '' #токен Телеграм-бота
-    poll-interval-seconds: 2 #интервал запроса к Телеграм-боту
-    poll-long-poll-seconds: 1 #время ожидания ответа Телеграма
-    link-code-timeout-seconds: 300 #срок действия кода Телеграма
-    api-base-url: 'https://api.telegram.org/bot'
-    referral-bot: true #отправлять ссылку на бота вместо копирования кода
-    user-bot: '' #имя Телеграм-бота без символа @
+    enabled: false
+    bot-token: "" # токен бота от BotFather
+    poll-interval-seconds: 2
+    poll-long-poll-seconds: 1
+    link-code-timeout-seconds: 300
+    api-base-url: "https://api.telegram.org/bot"
+    referral-bot: true # выдавать ссылку вместо кода
+    user-bot: "" # юзернейм бота без @
   discord:
-    enabled: false #включить уведомления через вебхук Дискорда
+    enabled: false
