@@ -65,4 +65,6 @@ Every mutating request takes a unique `UUID operationId` and `NamespacedKey sour
 - API methods are safe to call from any thread on Paper and Folia
 - `CompletionStage` completion thread is unspecified; dispatch Bukkit/player calls via Paper/Folia schedulers
 
-[Русская версия API](apiru.md)
+---
+
+[Overview](README.md) · [Usage guide](guide.md) · [Русская версия API](apiru.md)
